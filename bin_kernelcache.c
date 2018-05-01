@@ -4,6 +4,8 @@
 #include <r_util.h>
 #include <r_lib.h>
 #include <r_bin.h>
+#include <r_syscall.h>
+
 // #include "../format/mach0/mach0_defines.h"
 #define R_BIN_MACH064 1
 #include "format/mach0/mach0.h"
@@ -43,6 +45,11 @@ typedef struct _RKext {
 	struct MACH0_(obj_t) * mach0;
 } RKext;
 
+#define KEXT_SHORT_NAME(kext) ({\
+	const char * sn = strrchr (kext->name, '.');\
+	sn ? sn + 1 : kext->name;\
+})
+
 static RPrelinkRange *get_prelink_info_range(const ut8 *header_bytes, ut64 length);
 static RPrelinkRange *get_prelink_info_range_from_mach0(struct MACH0_(obj_t) * mach0);
 static RList * filter_kexts(RKernelCacheObj * obj);
@@ -50,6 +57,7 @@ static RList * filter_kexts(RKernelCacheObj * obj);
 static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinFile *bf, ut64 paddr, char * prefix);
 static void handle_data_sections(RBinSection *sect);
 static void symbols_from_mach0(RList *ret, struct MACH0_(obj_t) * mach0, RBinFile *bf, ut64 paddr, int ordinal);
+static RList *resolve_syscalls(RKernelCacheObj * obj, ut64 enosys_addr);
 static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
 static RStubsInfo *get_stubs_info(struct MACH0_(obj_t) * mach0, ut64 paddr);
 
@@ -62,7 +70,8 @@ static RBinAddr* newEntry(ut64 haddr, ut64 vaddr, int type);
 static void r_kernel_cache_free(RKernelCacheObj * obj);
 
 static void *load_buffer(RBinFile *bf, RBuffer *buf, ut64 loadaddr, Sdb * sdb) {
-	RBuffer *fbuf = r_buf_new_with_io (&bf->rbin->iob, bf->fd);
+	RBuffer *fbuf = r_buf_ref (buf);
+	//RBuffer *fbuf = r_buf_new_with_io (&bf->rbin->iob, bf->fd);
 	struct MACH0_(obj_t) *main_mach0 = MACH0_(new_buf_steal) (fbuf, bf->rbin->verbose);
 	if (!main_mach0) {
 		return NULL;
@@ -312,7 +321,7 @@ static void r_kext_free(RKext * kext) {
 }
 
 static struct MACH0_(obj_t) * create_kext_mach0(RKernelCacheObj * obj, RKext * kext) {
-	int sz = 1024 * 1024 * 2;
+	/*int sz = 1024 * 1024 * 2;
 
 	ut8 * bytes = malloc (sz);
 	if (!bytes) {
@@ -322,7 +331,8 @@ static struct MACH0_(obj_t) * create_kext_mach0(RKernelCacheObj * obj, RKext * k
 	sz = r_buf_read_at (obj->cache_buf, kext->range.offset, bytes, sz);
 
 	RBuffer *buf = r_buf_new ();
-	r_buf_set_bytes_steal (buf, bytes, sz);
+	r_buf_set_bytes_steal (buf, bytes, sz);*/
+	RBuffer * buf = r_buf_new_slice (obj->cache_buf, kext->range.offset, UT64_MAX);
 	struct MACH0_(obj_t) *mach0 = MACH0_(new_buf_steal) (buf, true);
 	if (!mach0) {
 		r_buf_free (buf);
@@ -531,9 +541,24 @@ static RList* symbols(RBinFile *bf) {
 
 	RListIter * iter;
 	RBinSymbol *sym;
+	ut64 enosys_addr = 0;
 	r_list_foreach (ret, iter, sym) {
 		const char *key = sdb_fmt ("%"PFMT64x, sym->vaddr);
 		sdb_ht_insert (kernel_syms_by_addr, key, sym->dname ? sym->dname : sym->name);
+		if (!enosys_addr && strstr (sym->name, "enosys")) {
+			enosys_addr = sym->vaddr;
+		}
+	}
+
+	RList * syscalls = resolve_syscalls (obj, enosys_addr);
+	if (syscalls) {
+		r_list_foreach (syscalls, iter, sym) {
+			const char *key = sdb_fmt ("%"PFMT64x, sym->vaddr);
+			sdb_ht_insert (kernel_syms_by_addr, key, sym->name);
+			r_list_append (ret, sym);
+		}
+		syscalls->free = NULL;
+		r_list_free (syscalls);
 	}
 
 	RKext * kext;
@@ -604,6 +629,138 @@ static void symbols_from_mach0(RList *ret, struct MACH0_(obj_t) * mach0, RBinFil
 	free (symbols);
 }
 
+#define IS_KERNEL_ADDR(x) ((x & 0xfffffff000000000L) == 0xfffffff000000000L)
+
+struct _r_sysent {
+	void *sy_call;
+	void *sy_arg_munge32;
+	int32_t sy_return_type;
+	int16_t sy_narg;
+	uint16_t sy_arg_bytes;
+};
+
+static RList *resolve_syscalls(RKernelCacheObj * obj, ut64 enosys_addr) {
+	struct section_t *sections = NULL;
+	if (!(sections = MACH0_(get_sections) (obj->mach0))) {
+		return NULL;
+	}
+
+	RList * syscalls = NULL;
+	RSyscall * syscall = NULL;
+	ut8 * data_const = NULL;
+	ut64 data_const_offset = 0, data_const_size = 0, data_const_vaddr = 0;
+	int i = 0;
+	for (; !sections[i].last; i++) {
+		if (strstr (sections[i].name, "__DATA_CONST.__const")) {
+			data_const_offset = sections[i].offset;
+			data_const_size = sections[i].size;
+			data_const_vaddr = sections[i].addr;
+			break;
+		}
+	}
+
+	if (!data_const_offset || !data_const_size || !data_const_vaddr) {
+		goto beach;
+	}
+
+	data_const = malloc (data_const_size);
+	if (r_buf_read_at (obj->cache_buf, data_const_offset, data_const, data_const_size) < data_const_size) {
+		goto beach;
+	}
+
+	ut8 *cursor = data_const;
+	ut8 *end = data_const + data_const_size;
+	while (cursor < end) {
+		ut64 test = r_read_le64 (cursor);
+		if (test == enosys_addr) {
+			break;
+		}
+		cursor += 8;
+	}
+
+	if (cursor >= end) {
+		goto beach;
+	}
+
+	cursor -= 24;
+	while (cursor >= data_const) {
+		ut64 addr = r_read_le64 (cursor);
+		ut64 x = r_read_le64 (cursor + 8);
+		ut64 y = r_read_le64 (cursor + 16);
+
+		if (IS_KERNEL_ADDR (addr) &&
+			(x == 0 || IS_KERNEL_ADDR (x)) &&
+			(y != 0 && !IS_KERNEL_ADDR (y))) {
+			cursor -= 24;
+			continue;
+		}
+
+		cursor += 24;
+		break;
+	}
+
+	if (cursor < data_const) {
+		goto beach;
+	}
+
+	syscalls = r_list_newf (r_bin_symbol_free);
+	if (!syscalls) {
+		goto beach;
+	}
+
+	syscall = r_syscall_new ();
+	if (!syscall) {
+		goto beach;
+	}
+	r_syscall_setup (syscall, "arm", 64, NULL, "ios");
+	if (!syscall->db) {
+		r_syscall_free (syscall);
+		goto beach;
+	}
+
+	ut64 sysent_vaddr = cursor - data_const + data_const_vaddr;
+
+	i = 1;
+	cursor += 24;
+	int num_syscalls = sdb_count (syscall->db);
+	while (cursor < end && i < num_syscalls) {
+		ut64 addr = r_read_le64 (cursor);
+		RSyscallItem * item = r_syscall_get (syscall, i, 0x80);
+		if (item && item->name) {
+			RBinSymbol * sym = R_NEW0 (RBinSymbol);
+			if (!sym) {
+				goto beach;
+			}
+
+			sym->name = r_str_newf ("syscall.%d.%s", i, item->name);
+			sym->vaddr = addr;
+			sym->paddr = addr;
+			sym->size = 0;
+			sym->forwarder = r_str_const ("NONE");
+			sym->bind = r_str_const ("GLOBAL");
+			sym->type = r_str_const ("FUNC");
+			r_list_append (syscalls, sym);
+
+			r_syscall_item_free (item);
+		}
+
+		cursor += 24;
+		i++;
+	}
+
+	r_syscall_free (syscall);
+	R_FREE (data_const);
+	R_FREE (sections);
+	return syscalls;
+
+beach:
+	r_syscall_free (syscall);
+	R_FREE (syscalls);
+	R_FREE (data_const);
+	R_FREE (sections);
+	return NULL;
+}
+
 static ut64 extract_addr_from_code(ut8 * arm64_code, ut64 vaddr) {
 	ut64 addr = vaddr & ~0xfff;
 
@@ -616,12 +773,6 @@ static ut64 extract_addr_from_code(ut8 * arm64_code, ut64 vaddr) {
 
 	return addr;
 }
-
-
-#define KEXT_SHORT_NAME(kext) ({\
-	const char * sn = strrchr (kext->name, '.');\
-	sn ? sn + 1 : kext->name;\
-})
 
 static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal) {
 	RStubsInfo * stubs_info = get_stubs_info(kext->mach0, kext->range.offset);
@@ -663,6 +814,9 @@ static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernel
 				sym->vaddr = vaddr;
 				sym->paddr = stubs_cursor;
 				sym->size = 12;
+				sym->forwarder = r_str_const ("NONE");
+				sym->bind = r_str_const ("LOCAL");
+				sym->type = r_str_const ("FUNC");
 				sym->ordinal = ordinal ++;
 				r_list_append (ret, sym);
 				break;
