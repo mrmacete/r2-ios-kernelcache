@@ -92,7 +92,7 @@ static int init_hdr(struct MACH0_(obj_t)* bin) {
 	ut8 machohdrbytes[sizeof (struct MACH0_(mach_header))] = {0};
 	int len;
 
-	if (r_buf_read_at (bin->b, 0, magicbytes, 4) < 1) {
+	if (r_buf_read_at (bin->b, 0 + bin->header_at, magicbytes, 4) < 1) {
 		return false;
 	}
 	if (r_read_le32 (magicbytes) == 0xfeedface) {
@@ -110,7 +110,7 @@ static int init_hdr(struct MACH0_(obj_t)* bin) {
 	} else {
 		return false; // object files are magic == 0, but body is different :?
 	}
-	len = r_buf_read_at (bin->b, 0, machohdrbytes, sizeof (machohdrbytes));
+	len = r_buf_read_at (bin->b, 0 + bin->header_at, machohdrbytes, sizeof (machohdrbytes));
 	if (len != sizeof (machohdrbytes)) {
 		bprintf ("Error: read (hdr)\n");
 		return false;
@@ -618,6 +618,7 @@ static int parse_thread(struct MACH0_(obj_t)* bin, struct load_command *lc, ut64
 	ut8 *arw_ptr = NULL;
 	int arw_sz, len = 0;
 	ut8 thc[sizeof (struct thread_command)] = {0};
+	ut8 tmp[4];
 
 	if (off > bin->size || off + sizeof (struct thread_command) > bin->size)
 		return false;
@@ -628,7 +629,10 @@ static int parse_thread(struct MACH0_(obj_t)* bin, struct load_command *lc, ut64
 	}
 	bin->thread.cmd = r_read_ble32 (&thc[0], bin->big_endian);
 	bin->thread.cmdsize = r_read_ble32 (&thc[4], bin->big_endian);
-	flavor = r_read_ble32 (bin->b->buf + off + sizeof (struct thread_command), bin->big_endian);
+	if (r_buf_read_at (bin->b, off + sizeof (struct thread_command), tmp, 4) < 4) {
+		goto wrong_read;
+	}
+	flavor = r_read_ble32 (tmp, bin->big_endian);
 	if (len == -1)
 		goto wrong_read;
 
@@ -637,8 +641,10 @@ static int parse_thread(struct MACH0_(obj_t)* bin, struct load_command *lc, ut64
 		return false;
 
 	// TODO: use count for checks
-	count = r_read_ble32 (bin->b->buf + off + sizeof (struct thread_command) + sizeof (flavor),
-				bin->big_endian);
+	if (r_buf_read_at (bin->b, off + sizeof (struct thread_command) + sizeof (flavor), tmp, 4) < 4) {
+		goto wrong_read;
+	}
+	count = r_read_ble32 (tmp, bin->big_endian);
 	ptr_thread = off + sizeof (struct thread_command) + sizeof (flavor) + sizeof (count);
 
 	if (ptr_thread > bin->size)
@@ -922,7 +928,7 @@ static int init_items(struct MACH0_(obj_t)* bin) {
 		//return false;
 	}
 	//bprintf ("Commands: %d\n", bin->hdr.ncmds);
-	for (i = 0, off = sizeof (struct MACH0_(mach_header)); \
+	for (i = 0, off = sizeof (struct MACH0_(mach_header)) + bin->header_at; \
 			i < bin->hdr.ncmds; i++, off += lc.cmdsize) {
 		if (off > bin->size || off + sizeof (struct load_command) > bin->size){
 			bprintf ("mach0: out of bounds command\n");
@@ -1238,14 +1244,30 @@ void* MACH0_(mach0_free)(struct MACH0_(obj_t)* bin) {
 	return NULL;
 }
 
-struct MACH0_(obj_t)* MACH0_(mach0_new)(const char* file, bool verbose) {
+void MACH0_(opts_set_default)(struct MACH0_(opts_t) *options, RBinFile * bf) {
+	if (!options) {
+		return;
+	}
+
+	options->header_at = 0;
+	if (bf && bf->rbin) {
+		options->verbose = bf->rbin->verbose;
+	} else {
+		options->verbose = false;
+	}
+}
+
+struct MACH0_(obj_t)* MACH0_(mach0_new)(const char* file, struct MACH0_(opts_t) *options) {
 	ut8 *buf;
 	struct MACH0_(obj_t) *bin;
 	if (!(bin = malloc (sizeof (struct MACH0_(obj_t))))) {
 		return NULL;
 	}
 	memset (bin, 0, sizeof (struct MACH0_(obj_t)));
-	bin->verbose = verbose;
+	if (options) {
+		bin->verbose = options->verbose;
+		bin->header_at = options->header_at;
+	}
 	bin->file = file;
 	if (!(buf = (ut8*)r_file_slurp (file, &bin->size))) {
 		return MACH0_(mach0_free)(bin);
@@ -1265,28 +1287,24 @@ struct MACH0_(obj_t)* MACH0_(mach0_new)(const char* file, bool verbose) {
 	return bin;
 }
 
-struct MACH0_(obj_t)* MACH0_(new_buf)(RBuffer *buf, bool verbose) {
-	RBuffer * buf_copy = r_buf_new ();
-	if (!buf_copy) {
+struct MACH0_(obj_t)* MACH0_(new_buf)(RBuffer *buf, struct MACH0_(opts_t) *options) {
+	if (!buf) {
 		return NULL;
 	}
 
-	if (!r_buf_set_bytes (buf_copy, buf->buf, buf->length)) {
-		return NULL;
-	}
+	RBuffer * buf_ref = r_buf_ref (buf);
 
-	return MACH0_(new_buf_steal) (buf_copy, verbose);
-}
-
-struct MACH0_(obj_t)* MACH0_(new_buf_steal)(RBuffer *buf, bool verbose) {
 	struct MACH0_(obj_t) *bin = R_NEW0 (struct MACH0_(obj_t));
 	if (!bin) {
 		return NULL;
 	}
 	bin->kv = sdb_new (NULL, "bin.mach0", 0);
-	bin->size = r_buf_size (buf);
-	bin->verbose = verbose;
-	bin->b = buf;
+	bin->size = r_buf_size (buf_ref);
+	if (options) {
+		bin->verbose = options->verbose;
+		bin->header_at = options->header_at;
+	}
+	bin->b = buf_ref;
 	if (!init (bin)) {
 		return MACH0_(mach0_free)(bin);
 	}
@@ -1580,8 +1598,9 @@ struct symbol_t* MACH0_(get_symbols)(struct MACH0_(obj_t)* bin) {
 			bprintf ("mach0-get-symbols: error\n");
 			break;
 		}
-		if (parse_import_stub(bin, &symbols[j], i))
+		if (parse_import_stub(bin, &symbols[j], i)) {
 			symbols[j++].last = 0;
+		}
 	}
 
 #if 1
@@ -1656,12 +1675,16 @@ static int parse_import_ptr(struct MACH0_(obj_t)* bin, struct reloc_t *reloc, in
 
 	for (i = 0; i < bin->nsects; i++) {
 		if ((bin->sects[i].flags & SECTION_TYPE) == stype) {
-			for (j=0, sym=-1; bin->sects[i].reserved1+j < bin->nindirectsyms; j++)
-				if (idx == bin->indirectsyms[bin->sects[i].reserved1 + j]) {
+			for (j = 0, sym = -1; bin->sects[i].reserved1 + j < bin->nindirectsyms; j++) {
+				int indidx = bin->sects[i].reserved1 + j;
+				if (indidx < 0 || indidx >= bin->nindirectsyms) {
+					break;
+				}
+				if (idx == bin->indirectsyms[indidx]) {
 					sym = j;
 					break;
 				}
-
+			}
 			reloc->offset = sym == -1 ? 0 : bin->sects[i].offset + sym * wordsize;
 			reloc->addr = sym == -1 ? 0 : bin->sects[i].addr + sym * wordsize;
 			return true;
@@ -1675,8 +1698,9 @@ struct import_t* MACH0_(get_imports)(struct MACH0_(obj_t)* bin) {
 	int i, j, idx, stridx;
 	const char *symstr;
 
-	if (!bin->symtab || !bin->symstr || !bin->sects || !bin->indirectsyms)
+	if (!bin->symtab || !bin->symstr || !bin->sects || !bin->indirectsyms) {
 		return NULL;
+	}
 	if (bin->dysymtab.nundefsym < 1 || bin->dysymtab.nundefsym > 0xfffff) {
 		return NULL;
 	}
@@ -2458,12 +2482,12 @@ RList* MACH0_(mach_fields)(RBinFile *bf) {
 #define ROW(nam,siz,val,fmt) \
 	r_list_append (ret, r_bin_field_new (addr, addr, siz, nam, sdb_fmt ("0x%08x", val), fmt)); \
 	addr += 4;
-	ROW("hdr.magic", 4, mh->magic, "x");
-	ROW("hdr.cputype", 4, mh->cputype, NULL);
-	ROW("hdr.cpusubtype", 4, mh->cpusubtype, NULL);
-	ROW("hdr.filetype", 4, mh->filetype, NULL);
-	ROW("hdr.ncmds", 4, mh->ncmds, NULL);
-	ROW("hdr.sizeofcmds", 4, mh->sizeofcmds, NULL);
+	ROW ("hdr.magic", 4, mh->magic, "x");
+	ROW ("hdr.cputype", 4, mh->cputype, "x");
+	ROW ("hdr.cpusubtype", 4, mh->cpusubtype, "x");
+	ROW ("hdr.filetype", 4, mh->filetype, "x");
+	ROW ("hdr.nbcmds", 4, mh->ncmds, "x");
+	ROW ("hdr.sizeofcmds", 4, mh->sizeofcmds, "x");
 	free (mh);
 	return ret;
 }

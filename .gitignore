@@ -2,3 +2,5 @@
 test
 cfdict-parse
 bin_kernelcache.dylib
+*.d
+*.o
