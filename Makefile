@@ -10,7 +10,7 @@ CC_BIN=$(CC) $(CFLAGS_BIN) $(LDFLAGS_BIN)
 CC_EXEC=$(CC) $(CFLAGS_BIN) $(LDFLAGS_EXEC)
 
 all:
-	$(CC_BIN) -DR_CF_DICT_IN_LIB -o bin_kernelcache.$(EXT_SO) bin_kernelcache.c r_cf_dict.c yxml.c
+	$(CC_BIN) -DR_CF_DICT_IN_LIB -o bin_kernelcache.$(EXT_SO) bin_kernelcache.c r_cf_dict.c yxml.c format/mach0/mach064.c
 	$(CC_EXEC) -o cfdict-parse r_cf_dict.c yxml.c
 
 install: all
