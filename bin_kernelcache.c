@@ -103,6 +103,7 @@ static void symbols_from_mach0(RList *ret, struct MACH0_(obj_t) * mach0, RBinFil
 static RList *resolve_syscalls(RKernelCacheObj * obj, ut64 enosys_addr);
 static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
 static RStubsInfo *get_stubs_info(struct MACH0_(obj_t) * mach0, ut64 paddr);
+static int prot2perm (int x);
 
 static void r_kext_free(RKext * kext);
 static void r_kext_fill_text_range(RKext * kext);
@@ -676,8 +677,6 @@ static RList* sections(RBinFile *bf) {
 
 	RKernelCacheObj * kobj = (RKernelCacheObj*) obj->bin_obj;
 
-	sections_from_mach0 (ret, kobj->mach0, bf, 0, NULL);
-
 	int iter;
 	RKext * kext;
 	r_kext_index_foreach (kobj->kexts, iter, kext) {
@@ -695,7 +694,46 @@ static RList* sections(RBinFile *bf) {
 		}
 	}
 
+	sections_from_mach0 (ret, kobj->mach0, bf, 0, NULL);
+
+	struct MACH0_(segment_command) *seg;
+	int nsegs = R_MIN (kobj->mach0->nsegs, 128);
+	int i;
+	for (i = 0; i < nsegs; i++) {
+		RBinSection * ptr;
+		char segname[17];
+
+		if (!(ptr = R_NEW0 (RBinSection))) {
+			break;
+		}
+
+		seg = &kobj->mach0->segs[i];
+		r_str_ncpy (segname, seg->segname, 17);
+		r_str_filter (segname, -1);
+
+		r_snprintf (ptr->name, R_BIN_SIZEOF_STRINGS, "%d.%s", i, segname);
+		ptr->name[R_BIN_SIZEOF_STRINGS] = 0;
+		ptr->size = seg->vmsize;
+		ptr->vsize = seg->vmsize;
+		ptr->paddr = seg->fileoff + bf->o->boffset;
+		ptr->vaddr = seg->vmaddr;
+		ptr->add = true;
+		if (!ptr->vaddr) {
+			ptr->vaddr = ptr->paddr;
+		}
+		ptr->srwx = prot2perm (seg->initprot);
+		r_list_append (ret, ptr);
+	}
+
 	return ret;
+}
+
+static int prot2perm (int x) {
+	int r = 0;
+	if (x&1) r |= 4;
+	if (x&2) r |= 2;
+	if (x&4) r |= 1;
+	return r;
 }
 
 static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinFile *bf, ut64 paddr, char * prefix) {
