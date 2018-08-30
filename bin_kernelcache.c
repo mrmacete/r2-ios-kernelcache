@@ -648,7 +648,7 @@ static RBinAddr* newEntry(ut64 haddr, ut64 vaddr, int type) {
 	}
 	ptr->paddr = haddr;
 	ptr->vaddr = vaddr;
-	ptr->haddr = haddr;
+	ptr->hpaddr = haddr;
 	ptr->bits = 64;
 	ptr->type = type;
 	return ptr;
