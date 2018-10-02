@@ -12,10 +12,16 @@
 
 #define CSMAGIC_CODEDIRECTORY      0xfade0c02
 #define CSMAGIC_EMBEDDED_SIGNATURE 0xfade0cc0
+#define CSMAGIC_DETACHED_SIGNATURE 0xfade0cc1 /* multi-arch collection of embedded signatures */
 #define CSMAGIC_ENTITLEMENTS       0xfade7171
+#define CSMAGIC_REQUIREMENT        0xfade0c00 /* single Requirement blob */
+#define CSMAGIC_REQUIREMENTS       0xfade0c01 /* Requirements vector (internal requirements) */
 
 #define CSSLOT_CODEDIRECTORY 0
+#define CSSLOT_INFOSLOT 1
 #define CSSLOT_REQUIREMENTS  2
+#define CSSLOT_RESOURCEDIR 3
+#define CSSLOT_APPLICATION 4
 #define CSSLOT_ENTITLEMENTS  5
 
 struct section_t {
@@ -25,7 +31,7 @@ struct section_t {
 	ut64 vsize;
 	ut32 align;
 	ut32 flags;
-	int srwx;
+	int perm;
 	char name[R_BIN_MACH0_STRING_LENGTH];
 	int last;
 };
@@ -134,6 +140,8 @@ struct MACH0_(obj_t) {
 	Sdb *kv;
 	int has_crypto;
 	int has_canary;
+	int has_retguard;
+	int has_sanitizers;
 	int dbg_info;
 	const char *lang;
 	int uuidn;

@@ -613,7 +613,7 @@ static void get_method_list_t(mach0_ut p, RBinFile *bf, char *class_name, RBinCl
 		}
 
 		method->vaddr = m.imp;
-		method->type = is_static ? "FUNC" : "METH";
+		method->type = is_static ? R_BIN_TYPE_FUNC_STR : "METH";
 		if (is_static) {
 			method->method_flags |= R_BIN_METH_CLASS;
 		}
@@ -785,7 +785,9 @@ static void get_protocol_list_t(mach0_ut p, RBinFile *bf, RBinClass *klass) {
 }
 
 static const char *skipnum(const char *s) {
-	while (IS_DIGIT (*s)) s++;
+	while (IS_DIGIT (*s)) {
+		s++;
+	}
 	return s;
 }
 

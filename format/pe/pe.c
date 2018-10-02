@@ -323,10 +323,10 @@ static PE_DWord bin_pe_rva_to_paddr(RBinPEObj* bin, PE_DWord rva) {
 	PE_DWord section_base;
 	int i, section_size;
 	for (i = 0; i < bin->num_sections; i++) {
-		section_base = bin->section_header[i].VirtualAddress;
-		section_size = bin->section_header[i].Misc.VirtualSize;
+		section_base = bin->sections[i].vaddr;
+		section_size = bin->sections[i].vsize;
 		if (rva >= section_base && rva < section_base + section_size) {
-			return bin->section_header[i].PointerToRawData + (rva - section_base);
+			return bin->sections[i].paddr + (rva - section_base);
 		}
 	}
 	return rva;
@@ -675,7 +675,7 @@ static struct r_bin_pe_export_t* parse_symbol_table(struct PE_(r_bin_pe_obj_t)* 
 		exp = exports;
 	}
 
-	sections = PE_(r_bin_pe_get_sections) (bin);
+	sections = bin->sections;
 	for (i = 0; i < bin->num_sections; i++) {
 		//XXX search by section with +x permission since the section can be left blank
 		if (!strcmp ((char*) sections[i].name, ".text")) {
@@ -684,7 +684,6 @@ static struct r_bin_pe_export_t* parse_symbol_table(struct PE_(r_bin_pe_obj_t)* 
 			textn = i + 1;
 		}
 	}
-	free (sections);
 	symctr = 0;
 	if (r_buf_read_at (bin->b, sym_tbl_off, (ut8*) buf, bufsz)) {
 		for (i = 0; i < shsz; i += srsz) {
@@ -724,13 +723,13 @@ static struct r_bin_pe_export_t* parse_symbol_table(struct PE_(r_bin_pe_obj_t)* 
 	return exports;
 }
 
+static struct r_bin_pe_section_t* PE_(r_bin_pe_get_sections)(struct PE_(r_bin_pe_obj_t)* bin);
 static int bin_pe_init_sections(struct PE_(r_bin_pe_obj_t)* bin) {
 	bin->num_sections = bin->nt_headers->file_header.NumberOfSections;
-	int sections_size;
 	if (bin->num_sections < 1) {
 		return true;
 	}
-	sections_size = sizeof (PE_(image_section_header)) * bin->num_sections;
+	int sections_size = sizeof (PE_(image_section_header)) * bin->num_sections;
 	if (sections_size > bin->size) {
 		sections_size = bin->size;
 		bin->num_sections = bin->size / sizeof (PE_(image_section_header));
@@ -879,8 +878,7 @@ int PE_(bin_pe_get_overlay)(struct PE_(r_bin_pe_obj_t)* bin, ut64* size) {
 				&largest_size);
 	}
 
-	struct r_bin_pe_section_t *sects = NULL;
-	sects = PE_(r_bin_pe_get_sections) (bin);
+	struct r_bin_pe_section_t *sects = bin->sections;
 	for (i = 0; !sects[i].last; i++) {
 		computeOverlayOffset(
 				sects[i].paddr,
@@ -909,10 +907,8 @@ int PE_(bin_pe_get_overlay)(struct PE_(r_bin_pe_obj_t)* bin, ut64* size) {
 
 	if ((ut64) bin->size > largest_offset + largest_size) {
 		*size = bin->size - largest_offset - largest_size;
-		free (sects);
 		return largest_offset + largest_size;
 	}
-	free (sects);
 	return 0;
 }
 
@@ -1388,7 +1384,7 @@ static void free_StringFileInfo(StringFileInfo* stringFileInfo) {
 	}
 }
 
-#define align32(x) x = ((x & 0x3) == 0)? x: (x & ~0x3) + 0x4;
+#define align32(x) x = (((x) & 0x3) == 0)? (x): ((x) & ~0x3) + 0x4;
 
 static void free_VS_VERSIONINFO(PE_VS_VERSIONINFO* vs_VersionInfo) {
 	if (vs_VersionInfo) {
@@ -2188,33 +2184,77 @@ static char* _resource_lang_str(int id) {
 }
 
 static char* _resource_type_str(int type) {
+	char * typeName;
 	switch (type) {
-	case 1: return "CURSOR";
-	case 2: return "BITMAP";
-	case 3: return "ICON";
-	case 4: return "MENU";
-	case 5: return "DIALOG";
-	case 6: return "STRING";
-	case 7: return "FONTDIR";
-	case 8: return "FONT";
-	case 9: return "ACCELERATOR";
-	case 10: return "RCDATA";
-	case 11: return "MESSAGETABLE";
-	case 12: return "GROUP_CURSOR";
-	case 14: return "GROUP_ICON";
-	case 16: return "VERSION";
-	case 17: return "DLGINCLUDE";
-	case 19: return "PLUGPLAY";
-	case 20: return "VXD";
-	case 21: return "ANICURSOR";
-	case 22: return "ANIICON";
-	case 23: return "HTML";
-	case 24: return "MANIFEST";
-	default: return "UNKNOWN";
+	case 1:
+		typeName = "CURSOR";
+		break;
+	case 2:
+		typeName = "BITMAP";
+		break;
+	case 3:
+		typeName = "ICON";
+		break;
+	case 4:
+		typeName = "MENU";
+		break;
+	case 5:
+		typeName = "DIALOG";
+		break;
+	case 6:
+		typeName = "STRING";
+		break;
+	case 7:
+		typeName = "FONTDIR";
+		break;
+	case 8:
+		typeName = "FONT";
+		break;
+	case 9:
+		typeName = "ACCELERATOR";
+		break;
+	case 10:
+		typeName = "RCDATA";
+		break;
+	case 11:
+		typeName = "MESSAGETABLE";
+		break;
+	case 12:
+		typeName = "GROUP_CURSOR";
+		break;
+	case 14:
+		typeName = "GROUP_ICON";
+		break;
+	case 16:
+		typeName = "VERSION";
+		break;
+	case 17:
+		typeName = "DLGINCLUDE";
+		break;
+	case 19:
+		typeName = "PLUGPLAY";
+		break;
+	case 20:
+		typeName = "VXD";
+		break;
+	case 21:
+		typeName = "ANICURSOR";
+		break;
+	case 22:
+		typeName = "ANIICON";
+		break;
+	case 23:
+		typeName = "HTML";
+		break;
+	case 24:
+		typeName = "MANIFEST";
+		break;
+	default: return r_str_newf ("UNKNOWN (%d)",type);
 	}
+	return strdup (typeName);
 }
 
-static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_resource_directory *dir, ut64 offDir, int type, int id, SdbHash *dirs) {
+static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_resource_directory *dir, ut64 offDir, int type, int id, SdbHt *dirs) {
 	int index = 0;
 	ut32 totalRes = dir->NumberOfNamedEntries + dir->NumberOfIdEntries;
 	ut64 rsrc_base = bin->resource_directory_offset;
@@ -2311,7 +2351,7 @@ static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_
 			break;
 		}
 		rs->timestr = _time_stamp_to_str (dir->TimeDateStamp);
-		rs->type = strdup (_resource_type_str (type));
+		rs->type = _resource_type_str (type);
 		rs->language = strdup (_resource_lang_str (entry.u1.Name & 0x3ff));
 		rs->data = data;
 		rs->name = id;
@@ -2355,7 +2395,7 @@ R_API void PE_(bin_pe_parse_resource)(struct PE_(r_bin_pe_obj_t) *bin) {
 	Pe_image_resource_directory *rs_directory = bin->resource_directory;
 	ut32 curRes = 0;
 	int totalRes = 0;
-	SdbHash *dirs = sdb_ht_new (); //to avoid infinite loops
+	SdbHt *dirs = sdb_ht_new (); //to avoid infinite loops
 	if (!dirs) {
 		return;
 	}
@@ -2444,6 +2484,7 @@ static int bin_pe_init(struct PE_(r_bin_pe_obj_t)* bin) {
 		eprintf ("Warning: Cannot initialize sections\n");
 		return false;
 	}
+	bin->sections = PE_(r_bin_pe_get_sections) (bin);
 	bin_pe_init_imports (bin);
 	bin_pe_init_exports (bin);
 	bin_pe_init_resource (bin);
@@ -2520,14 +2561,14 @@ struct r_bin_pe_addr_t* PE_(r_bin_pe_get_entrypoint)(struct PE_(r_bin_pe_obj_t)*
 	entry->haddr = bin->dos_header->e_lfanew + 4 + sizeof (PE_(image_file_header)) + 16;
 
 	if (entry->paddr >= bin->size) {
-		struct r_bin_pe_section_t* sections = PE_(r_bin_pe_get_sections) (bin);
+		struct r_bin_pe_section_t* sections = bin->sections;
 		ut64 paddr = 0;
 		if (!debug) {
 			bprintf ("Warning: Invalid entrypoint ... "
 				"trying to fix it but i do not promise nothing\n");
 		}
 		for (i = 0; i < bin->num_sections; i++) {
-			if (sections[i].flags & PE_IMAGE_SCN_MEM_EXECUTE) {
+			if (sections[i].perm & PE_IMAGE_SCN_MEM_EXECUTE) {
 				entry->paddr = sections[i].paddr;
 				entry->vaddr = sections[i].vaddr + base_addr;
 				paddr = 1;
@@ -2553,24 +2594,21 @@ struct r_bin_pe_addr_t* PE_(r_bin_pe_get_entrypoint)(struct PE_(r_bin_pe_obj_t)*
 				entry->vaddr = entry->paddr + base_addr;
 			}
 		}
-		free (sections);
-
 	}
 	if (!entry->paddr) {
 		if (!debug) {
 			bprintf ("Warning: NULL entrypoint\n");
 		}
-		struct r_bin_pe_section_t* sections = PE_(r_bin_pe_get_sections) (bin);
+		struct r_bin_pe_section_t* sections = bin->sections;
 		for (i = 0; i < bin->num_sections; i++) {
 			//If there is a section with x without w perm is a good candidate to be the entrypoint
-			if (sections[i].flags & PE_IMAGE_SCN_MEM_EXECUTE && !(sections[i].flags & PE_IMAGE_SCN_MEM_WRITE)) {
+			if (sections[i].perm & PE_IMAGE_SCN_MEM_EXECUTE && !(sections[i].perm & PE_IMAGE_SCN_MEM_WRITE)) {
 				entry->paddr = sections[i].paddr;
 				entry->vaddr = sections[i].vaddr + base_addr;
 				break;
 			}
 
 		}
-		free (sections);
 	}
 
 	if (is_arm (bin) && entry->vaddr & 1) {
@@ -2722,16 +2760,19 @@ static bool get_rsds(ut8* dbg_data, int dbg_data_len, SCV_RSDS_HEADER* res) {
 	return true;
 }
 
-static void get_nb10(ut8* dbg_data, SCV_NB10_HEADER* res) {
+static void get_nb10(ut8* dbg_data, int dbg_data_len, SCV_NB10_HEADER* res) {
 	const int nb10sz = 16;
-	// memcpy (res, dbg_data, nb10sz);
-	// res->file_name = (ut8*) strdup ((const char*) dbg_data + nb10sz);
+	if (dbg_data_len < nb10sz) {
+		return;
+	}
+	memcpy (res, dbg_data, nb10sz);
+	res->file_name = (ut8*) strdup ((const char*) dbg_data + nb10sz);
 }
 
 static int get_debug_info(struct PE_(r_bin_pe_obj_t)* bin, PE_(image_debug_directory_entry)* dbg_dir_entry, ut8* dbg_data, int dbg_data_len, SDebugInfo* res) {
 	#define SIZEOF_FILE_NAME 255
 	int i = 0;
-	const char* basename;
+	const char* dbgname;
 	if (!dbg_data) {
 		return 0;
 	}
@@ -2758,9 +2799,9 @@ static int get_debug_info(struct PE_(r_bin_pe_obj_t)* bin, PE_(image_debug_direc
 				rsds_hdr.guid.data4[6],
 				rsds_hdr.guid.data4[7],
 				rsds_hdr.age);
-			basename = r_file_basename ((char*) rsds_hdr.file_name);
+			dbgname = (char*) rsds_hdr.file_name;
 			strncpy (res->file_name, (const char*)
-				basename, sizeof (res->file_name));
+				dbgname, sizeof (res->file_name));
 			res->file_name[sizeof (res->file_name) - 1] = 0;
 			rsds_hdr.free ((struct SCV_RSDS_HEADER*) &rsds_hdr);
 		} else if (strncmp ((const char*) dbg_data, "NB10", 4) == 0) {
@@ -2770,7 +2811,7 @@ static int get_debug_info(struct PE_(r_bin_pe_obj_t)* bin, PE_(image_debug_direc
 			}
 			SCV_NB10_HEADER nb10_hdr = {{0}};
 			init_cv_nb10_header (&nb10_hdr);
-			get_nb10 (dbg_data, &nb10_hdr);
+			get_nb10 (dbg_data, dbg_data_len, &nb10_hdr);
 			snprintf (res->guidstr, sizeof (res->guidstr),
 				"%x%x", nb10_hdr.timestamp, nb10_hdr.age);
 			res->file_name[0] = 0;
@@ -2961,7 +3002,7 @@ struct r_bin_pe_lib_t* PE_(r_bin_pe_get_libs)(struct PE_(r_bin_pe_obj_t)* bin) {
 	PE_(image_import_directory) * curr_import_dir = NULL;
 	PE_(image_delay_import_directory) * curr_delay_import_dir = NULL;
 	PE_DWord name_off = 0;
-	SdbHash* lib_map = NULL;
+	SdbHt* lib_map = NULL;
 	ut64 off; //cache value
 	int index = 0;
 	int len = 0;
@@ -3206,7 +3247,7 @@ void PE_(r_bin_pe_check_sections)(struct PE_(r_bin_pe_obj_t)* bin, struct r_bin_
 			}
 			//look for other segment with x that is already mapped and hold entrypoint
 			for (j = 0; !sections[j].last; j++) {
-				if (sections[j].flags & PE_IMAGE_SCN_MEM_EXECUTE) {
+				if (sections[j].perm & PE_IMAGE_SCN_MEM_EXECUTE) {
 					addr_beg = sections[j].paddr;
 					addr_end = addr_beg + sections[j].size;
 					if (addr_beg <= entry->paddr && entry->paddr < addr_end) {
@@ -3229,7 +3270,7 @@ void PE_(r_bin_pe_check_sections)(struct PE_(r_bin_pe_obj_t)* bin, struct r_bin_
 				sections[i].paddr = entry->paddr;
 				sections[i].vaddr = entry->vaddr - base_addr;
 				sections[i].size = sections[i].vsize = new_section_size;
-				sections[i].flags = new_perm;
+				sections[i].perm = new_perm;
 			}
 			goto out_function;
 		}
@@ -3254,14 +3295,18 @@ void PE_(r_bin_pe_check_sections)(struct PE_(r_bin_pe_obj_t)* bin, struct r_bin_
 		}
 	}
 	//we need to create another section in order to load the entrypoint
-	sections = realloc (sections, (bin->num_sections + 2) * sizeof(struct r_bin_pe_section_t));
+	void *ss = realloc (sections, (bin->num_sections + 2) * sizeof(struct r_bin_pe_section_t));
+	if (!ss) {
+		goto out_function;
+	}
+	bin->sections = sections = ss;
 	i = bin->num_sections;
 	sections[i].last = 0;
 	strcpy ((char*) sections[i].name, "blob");
 	sections[i].paddr = entry->paddr;
 	sections[i].vaddr = entry->vaddr - base_addr;
 	sections[i].size = sections[i].vsize = new_section_size;
-	sections[i].flags = new_perm;
+	sections[i].perm = new_perm;
 	sections[i + 1].last = 1;
 	*sects = sections;
 out_function:
@@ -3270,7 +3315,7 @@ out_function:
 
 }
 
-struct r_bin_pe_section_t* PE_(r_bin_pe_get_sections)(struct PE_(r_bin_pe_obj_t)* bin) {
+static struct r_bin_pe_section_t* PE_(r_bin_pe_get_sections)(struct PE_(r_bin_pe_obj_t)* bin) {
 	struct r_bin_pe_section_t* sections = NULL;
 	PE_(image_section_header) * shdr;
 	int i, j, section_count = 0;
@@ -3323,16 +3368,26 @@ struct r_bin_pe_section_t* PE_(r_bin_pe_get_sections)(struct PE_(r_bin_pe_obj_t)
 		}
 		sections[j].vaddr = shdr[i].VirtualAddress;
 		sections[j].size = shdr[i].SizeOfRawData;
-		sections[j].vsize = shdr[i].Misc.VirtualSize;
+		if (shdr[i].Misc.VirtualSize) {
+			sections[j].vsize = shdr[i].Misc.VirtualSize;
+		} else {
+			sections[j].vsize = shdr[i].SizeOfRawData;
+		}
 		if (bin->optional_header) {
-			int sa = R_MAX (bin->optional_header->SectionAlignment, 0x1000);
-			ut64 diff = sections[j].vsize % sa;
-			if (diff) {
-				sections[j].vsize += sa - diff;
+			ut32 sa = bin->optional_header->SectionAlignment;
+			if (sa) {
+				ut64 diff = sections[j].vsize % sa;
+				if (diff) {
+					sections[j].vsize += sa - diff;
+				}
+				if (sections[j].vaddr % sa) {
+					bprintf ("Warning: section %s not aligned to SectionAlignment.\n",
+							sections[j].name);
+				}
 			}
 		}
 		sections[j].paddr = shdr[i].PointerToRawData;
-		sections[j].flags = shdr[i].Characteristics;
+		sections[j].perm = shdr[i].Characteristics;
 		sections[j].last = 0;
 		j++;
 	}
@@ -3372,7 +3427,7 @@ char* PE_(r_bin_pe_get_subsystem)(struct PE_(r_bin_pe_obj_t)* bin) {
 	return subsystem? strdup (subsystem): NULL;
 }
 
-#define HASCHR(x) bin->nt_headers->file_header.Characteristics & x
+#define HASCHR(x) (bin->nt_headers->file_header.Characteristics & (x))
 
 int PE_(r_bin_pe_is_dll)(struct PE_(r_bin_pe_obj_t)* bin) {
 	if (!bin || !bin->nt_headers) {
@@ -3434,7 +3489,6 @@ int PE_(r_bin_pe_is_stripped_debug)(struct PE_(r_bin_pe_obj_t)* bin) {
 	return HASCHR (PE_IMAGE_FILE_DEBUG_STRIPPED);
 }
 
-
 void* PE_(r_bin_pe_free)(struct PE_(r_bin_pe_obj_t)* bin) {
 	if (!bin) {
 		return NULL;
@@ -3447,6 +3501,7 @@ void* PE_(r_bin_pe_free)(struct PE_(r_bin_pe_obj_t)* bin) {
 	free (bin->resource_directory);
 	free (bin->delay_import_directory);
 	free (bin->tls_directory);
+	free (bin->sections);
 	r_list_free (bin->resources);
 	r_pkcs7_free_cms (bin->cms);
 	r_buf_free (bin->b);
