@@ -4,6 +4,7 @@
 #include <r_util.h>
 #include <r_lib.h>
 #include <r_bin.h>
+#include <r_core.h>
 #include <r_syscall.h>
 
 // #include "../format/mach0/mach0_defines.h"
@@ -12,6 +13,8 @@
 
 #include "r_cf_dict.h"
 
+typedef bool (* ROnRebaseFunc) (ut64 offset, ut64 decorated_addr, void * user_data);
+
 typedef struct _RKernelCacheObj {
 	RBuffer * cache_buf;
 	RCFValueDict * prelink_info;
@@ -19,6 +22,8 @@ typedef struct _RKernelCacheObj {
 	ut64 pa2va_data;
 	struct _RKextIndex * kexts;
 	struct MACH0_(obj_t) * mach0;
+	struct _RRebaseInfo * rebase_info;
+	int (*original_io_read)(RIO *io, RIODesc *fd, ut8 *buf, int count);
 } RKernelCacheObj;
 
 typedef struct _RFileRange {
@@ -51,6 +56,24 @@ typedef struct _RKextIndex {
 	ut64 length;
 	RKext **entries;
 } RKextIndex;
+
+typedef struct _RRebaseInfo {
+	RFileRange * ranges;
+	ut64 n_ranges;
+	ut64 multiplier;
+	ut64 kernel_base;
+} RRebaseInfo;
+
+typedef struct _RRebaseCtx {
+	ut64 off, eob;
+	ut8 * buf;
+	int count;
+	RKernelCacheObj * obj;
+} RRebaseCtx;
+
+typedef struct _RParsedPointer {
+	ut64 address;
+} RParsedPointer;
 
 #define KEXT_SHORT_NAME(kext) ({\
 	const char * sn = strrchr (kext->name, '.');\
@@ -93,6 +116,17 @@ typedef struct _RKextIndex {
 #define R_K_CONSTRUCTOR_TO_ENTRY 0
 #define R_K_CONSTRUCTOR_TO_SYMBOL 1
 
+static RRebaseInfo *r_rebase_info_new_from_mach0(RBuffer *cache_buf, struct MACH0_(obj_t) * mach0);
+static void r_rebase_info_free(RRebaseInfo * info);
+static void r_rebase_info_populate(RRebaseInfo * info, RKernelCacheObj * obj);
+static ut64 iterate_rebase_list(RBuffer * cache_buf, ut64 multiplier, ut64 start_offset, ROnRebaseFunc func, void * user_data);
+static ut64 r_rebase_offset_to_paddr (RKernelCacheObj * obj, struct section_t * sections, ut64 offset);
+static void swizzle_io_read(RKernelCacheObj *obj, RIO *io);
+static int kernelcache_io_read(RIO *io, RIODesc *fd, ut8 *buf, int count);
+static bool r_parse_pointer(RParsedPointer * ptr, ut64 decorated_addr, RKernelCacheObj * obj);
+static bool on_rebase_pointer (ut64 offset, ut64 decorated_addr, RRebaseCtx * ctx);
+static void rebase_buffer(RKernelCacheObj * obj, RIO * io, RIODesc *fd, ut8 *buf, int count);
+
 static RPrelinkRange *get_prelink_info_range(const ut8 *header_bytes, ut64 length);
 static RPrelinkRange *get_prelink_info_range_from_mach0(struct MACH0_(obj_t) * mach0);
 static RList * filter_kexts(RKernelCacheObj * obj);
@@ -101,7 +135,7 @@ static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinF
 static void handle_data_sections(RBinSection *sect);
 static void symbols_from_mach0(RList *ret, struct MACH0_(obj_t) * mach0, RBinFile *bf, ut64 paddr, int ordinal);
 static RList *resolve_syscalls(RKernelCacheObj * obj, ut64 enosys_addr);
-static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
+static void symbols_from_stubs(RList *ret, SdbHt *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
 static RStubsInfo *get_stubs_info(struct MACH0_(obj_t) * mach0, ut64 paddr);
 static int prot2perm (int x);
 
@@ -135,6 +169,8 @@ static void *load_buffer(RBinFile *bf, RBuffer *buf, ut64 loadaddr, Sdb * sdb) {
 		return NULL;
 	}
 
+	RRebaseInfo * rebase_info = r_rebase_info_new_from_mach0 (fbuf, main_mach0);
+
 	RPrelinkRange * prelink_range = get_prelink_info_range_from_mach0 (main_mach0);
 	if (!prelink_range) {
 		goto beach;
@@ -153,19 +189,19 @@ static void *load_buffer(RBinFile *bf, RBuffer *buf, ut64 loadaddr, Sdb * sdb) {
 	}
 
 	obj->mach0 = main_mach0;
+	obj->rebase_info = rebase_info;
 	obj->prelink_info = prelink_info;
 	obj->cache_buf = fbuf;
 	obj->pa2va_exec = prelink_range->pa2va_exec;
 	obj->pa2va_data = prelink_range->pa2va_data;
 
 	RList * kexts = filter_kexts (obj);
-	if (!kexts || !r_list_length (kexts)) {
-		r_cf_value_dict_free (prelink_info);
-		R_FREE (obj);
-		goto beach;
-	}
-
 	obj->kexts = r_kext_index_new (kexts);
+
+	if (rebase_info) {
+		RIO * io = bf->rbin->iob.io;
+		swizzle_io_read (obj, io);
+	}
 
 	return obj;
 
@@ -373,11 +409,8 @@ static RList * filter_kexts(RKernelCacheObj * obj) {
 
 	if (!is_sorted) {
 		eprintf ("SORTING KEXTs...\n");
-		//r_list_sort (kexts, kexts_sort_vaddr_func);
-	} else {
-		eprintf ("already sorted!\n");
+		r_list_sort (kexts, kexts_sort_vaddr_func);
 	}
-
 	return kexts;
 }
 
@@ -614,7 +647,10 @@ static void process_constructors(RKernelCacheObj *obj, struct MACH0_(obj_t) *mac
 		int j;
 		int count = 0;
 		for (j = 0; j < sections[i].size; j += 8) {
-			ut64 addr64 = r_read_le64 (buf + j);
+			ut64 decorated_addr = r_read_le64 (buf + j);
+			RParsedPointer parsed_ptr;
+			r_parse_pointer (&parsed_ptr, decorated_addr, obj);
+			ut64 addr64 = parsed_ptr.address;
 			ut64 paddr64 = sections[i].offset + paddr + j;
 			if (mode == R_K_CONSTRUCTOR_TO_ENTRY) {
 				RBinAddr *ba = newEntry (paddr64, addr64, type);
@@ -710,7 +746,6 @@ static RList* sections(RBinFile *bf) {
 		seg = &kobj->mach0->segs[i];
 		r_str_ncpy (segname, seg->segname, 17);
 		r_str_filter (segname, -1);
-
 		r_snprintf (ptr->name, R_BIN_SIZEOF_STRINGS, "%d.%s", i, segname);
 		ptr->name[R_BIN_SIZEOF_STRINGS] = 0;
 		ptr->size = seg->vmsize;
@@ -721,7 +756,7 @@ static RList* sections(RBinFile *bf) {
 		if (!ptr->vaddr) {
 			ptr->vaddr = ptr->paddr;
 		}
-		ptr->srwx = prot2perm (seg->initprot);
+		ptr->perm = prot2perm (seg->initprot);
 		r_list_append (ret, ptr);
 	}
 
@@ -770,7 +805,7 @@ static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinF
 		if (!ptr->vaddr) {
 			ptr->vaddr = ptr->paddr;
 		}
-		ptr->srwx = sections[i].srwx;
+		ptr->perm = sections[i].perm;
 		r_list_append (ret, ptr);
 	}
 	free (sections);
@@ -800,7 +835,7 @@ static RList* symbols(RBinFile *bf) {
 
 	symbols_from_mach0 (ret, obj->mach0, bf, 0, 0);
 
-	SdbHash *kernel_syms_by_addr = sdb_ht_new ();
+	SdbHt *kernel_syms_by_addr = sdb_ht_new ();
 	if (!kernel_syms_by_addr) {
 		r_list_free (ret);
 		return NULL;
@@ -1058,7 +1093,7 @@ static ut64 extract_addr_from_code(ut8 * arm64_code, ut64 vaddr) {
 	return addr;
 }
 
-static void symbols_from_stubs(RList *ret, SdbHash *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal) {
+static void symbols_from_stubs(RList *ret, SdbHt *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal) {
 	RStubsInfo * stubs_info = get_stubs_info(kext->mach0, kext->range.offset);
 	if (!stubs_info) {
 		return;
@@ -1259,7 +1294,290 @@ static void r_kernel_cache_free(RKernelCacheObj * obj) {
 		obj->kexts = NULL;
 	}
 
+	if (obj->rebase_info) {
+		r_rebase_info_free (obj->rebase_info);
+		obj->rebase_info = NULL;
+	}
+
 	R_FREE (obj);
+}
+
+static RRebaseInfo *r_rebase_info_new_from_mach0(RBuffer *cache_buf, struct MACH0_(obj_t) * mach0) {
+	RFileRange * rebase_ranges = NULL;
+	struct section_t *sections = NULL;
+	if (!(sections = MACH0_(get_sections) (mach0))) {
+		return NULL;
+	}
+
+	ut64 starts_offset = 0, starts_size = 0;
+
+	int i = 0;
+	for (; !sections[i].last; i++) {
+		if (strstr (sections[i].name, "__TEXT.__thread_starts")) {
+			starts_offset = sections[i].offset;
+			starts_size = sections[i].size;
+			break;
+		}
+	}
+
+	R_FREE (sections);
+
+	ut64 kernel_base = 0;
+
+	struct MACH0_(segment_command) *seg;
+	int nsegs = R_MIN (mach0->nsegs, 128);
+	for (i = 0; i < nsegs; i++) {
+		char segname[17];
+		seg = &mach0->segs[i];
+		r_str_ncpy (segname, seg->segname, 17);
+		if (!strncmp (segname, "__TEXT", 6) && segname[6] == '\0') {
+			kernel_base = seg->vmaddr;
+			break;
+		}
+	}
+
+	if (starts_offset == 0 || starts_size == 0 || kernel_base == 0) {
+		return NULL;
+	}
+
+	int n_starts = starts_size / 4;
+	if (n_starts <= 1) {
+		return NULL;
+	}
+	rebase_ranges = R_NEWS0 (RFileRange, n_starts - 1);
+	if (rebase_ranges == NULL) {
+		return NULL;
+	}
+
+	ut64 multiplier = 4;
+	for (i = 0; i != n_starts; i++) {
+		ut8 bytes[4];
+		if (r_buf_read_at (cache_buf, starts_offset + i * 4, bytes, 4) < 4) {
+			goto beach;
+		}
+
+		if (i == 0) {
+			multiplier += 4 * (r_read_le32 (bytes) & 1);
+			continue;
+		}
+
+		rebase_ranges[i - 1].offset = r_read_le32 (bytes);
+		rebase_ranges[i - 1].size = UT64_MAX;
+	}
+
+	RRebaseInfo * rebase_info = R_NEW0 (RRebaseInfo);
+	if (rebase_info == NULL) {
+		goto beach;
+	}
+	rebase_info->ranges = rebase_ranges;
+	rebase_info->n_ranges = n_starts - 1;
+	rebase_info->multiplier = multiplier;
+	rebase_info->kernel_base = kernel_base;
+
+	return rebase_info;
+
+beach:
+
+	R_FREE (rebase_ranges);
+	return NULL;
+}
+
+static void r_rebase_info_free(RRebaseInfo * info) {
+	if (!info) {
+		return;
+	}
+
+	if (info->ranges) {
+		R_FREE (info->ranges);
+		info->ranges = NULL;
+	}
+
+	R_FREE (info);
+}
+
+static void r_rebase_info_populate(RRebaseInfo * info, RKernelCacheObj * obj) {
+	struct section_t *sections = NULL;
+	int i = 0;
+
+	for (; i < info->n_ranges; i++) {
+		if (info->ranges[i].size != UT64_MAX) {
+			goto cleanup;
+		} else if (sections == NULL) {
+			if (!(sections = MACH0_(get_sections) (obj->mach0))) {
+				return;
+			}
+		}
+		info->ranges[i].offset = r_rebase_offset_to_paddr (obj, sections, info->ranges[i].offset);
+		ut64 end = iterate_rebase_list (obj->cache_buf, info->multiplier, info->ranges[i].offset, NULL, NULL);
+		if (end != UT64_MAX) {
+			info->ranges[i].size = end - info->ranges[i].offset + 8;
+		} else {
+			info->ranges[i].size = 0;
+		}
+	}
+
+cleanup:
+	R_FREE (sections);
+}
+
+static ut64 r_rebase_offset_to_paddr (RKernelCacheObj * obj, struct section_t * sections, ut64 offset) {
+	ut64 vaddr = obj->rebase_info->kernel_base + offset;
+	int i = 0;
+	for (; !sections[i].last; i++) {
+		if (sections[i].addr <= vaddr && vaddr < (sections[i].addr + sections[i].vsize)) {
+			return sections[i].offset + (vaddr - sections[i].addr);
+		}
+	}
+	return offset;
+}
+
+static ut64 iterate_rebase_list(RBuffer * cache_buf, ut64 multiplier, ut64 start_offset, ROnRebaseFunc func, void * user_data) {
+	ut8 bytes[8];
+	ut64 cursor = start_offset;
+
+	while (true) {
+		if (r_buf_read_at (cache_buf, cursor, bytes, 8) < 8) {
+			return UT64_MAX;
+		}
+
+		ut64 decorated_addr = r_read_le64 (bytes);
+
+		if (func) {
+			bool carry_on = func (cursor, decorated_addr, user_data);
+			if (!carry_on) {
+				break;
+			}
+		}
+
+		ut64 delta = ((decorated_addr >> 51) & 0x7ff) * multiplier;
+		if (delta == 0) {
+			break;
+		}
+		cursor += delta;
+	}
+
+	return cursor;
+}
+
+static void swizzle_io_read(RKernelCacheObj *obj, RIO *io) {
+	if (!io || !io->desc || !io->desc->plugin) {
+		return;
+	}
+
+	RIOPlugin *plugin = io->desc->plugin;
+	obj->original_io_read = plugin->read;
+	plugin->read = &kernelcache_io_read;
+}
+
+static int kernelcache_io_read(RIO *io, RIODesc *fd, ut8 *buf, int count) {
+	if (!io) {
+		return -1;
+	}
+	RCore *core = (RCore*) io->user;
+
+	if (!core || !core->bin || !core->bin->binfiles) {
+		return -1;
+	}
+
+	RKernelCacheObj *cache = NULL;
+	RListIter *iter;
+	RBinFile *bf;
+	r_list_foreach (core->bin->binfiles, iter, bf) {
+		if (bf->fd == fd->fd ) {
+			cache = bf->o->bin_obj;
+			break;
+		}
+	}
+
+	if (!cache || !cache->original_io_read) {
+		return fd->plugin->read (io, fd, buf, count);
+	}
+
+	r_rebase_info_populate (cache->rebase_info, cache);
+
+	static ut8 * internal_buffer = NULL;
+	static int internal_buf_size = 0;
+	if (count > internal_buf_size) {
+		if (internal_buffer) {
+			R_FREE (internal_buffer);
+			internal_buffer = NULL;
+		}
+		internal_buffer = (ut8 *) malloc (count);
+		internal_buf_size = count;
+	}
+
+	int result = cache->original_io_read (io, fd, internal_buffer, count);
+
+	if (result == count) {
+		rebase_buffer (cache, io, fd, internal_buffer, count);
+		memcpy (buf, internal_buffer, result);
+	}
+
+	return result;
+}
+
+static void rebase_buffer(RKernelCacheObj * obj, RIO * io, RIODesc *fd, ut8 *buf, int count) {
+	ut64 off = io->off;
+	ut64 eob = off + count;
+	int i = 0;
+	RRebaseCtx ctx;
+
+	ctx.off = off;
+	ctx.eob = eob;
+	ctx.buf = buf;
+	ctx.count = count;
+	ctx.obj = obj;
+
+	for (; i < obj->rebase_info->n_ranges; i++) {
+		ut64 start = obj->rebase_info->ranges[i].offset;
+		ut64 end = start + obj->rebase_info->ranges[i].size;
+		if (end >= off && start <= eob) {
+			iterate_rebase_list (obj->cache_buf, obj->rebase_info->multiplier, start,
+				(ROnRebaseFunc) on_rebase_pointer, &ctx);
+		}
+	}
+}
+
+static bool on_rebase_pointer (ut64 offset, ut64 decorated_addr, RRebaseCtx * ctx) {
+	if (offset < ctx->off) {
+		return true;
+	}
+	if (offset >= ctx->eob) {
+		return false;
+	}
+	ut64 in_buf = offset - ctx->off;
+	if (in_buf >= ctx->count || (in_buf + 8) > ctx->count) {
+		return false;
+	}
+
+	RParsedPointer ptr;
+	r_parse_pointer (&ptr, decorated_addr, ctx->obj);
+
+	r_write_le64 (&ctx->buf[in_buf], ptr.address);
+
+	return true;
+}
+
+static bool r_parse_pointer(RParsedPointer * ptr, ut64 decorated_addr, RKernelCacheObj * obj) {
+	/*
+	 * Logic taken from:
+	 * https://github.com/Synacktiv/kernelcache-laundering/blob/master/ios12_kernel_cache_helper.py
+	 */
+
+	if ((decorated_addr & 0x4000000000000000LL) == 0 && obj->rebase_info) {
+		if (decorated_addr & 0x8000000000000000LL) {
+			ptr->address = obj->rebase_info->kernel_base + (decorated_addr & 0xFFFFFFFFLL);
+		} else {
+			ptr->address = ((decorated_addr << 13) & 0xFF00000000000000LL) | (decorated_addr & 0x7ffffffffffLL);
+			if (decorated_addr & 0x40000000000LL) {
+				ptr->address |= 0xfffc0000000000LL;
+			}
+		}
+	} else {
+		ptr->address = decorated_addr;
+	}
+
+	return true;
 }
 
 RBinPlugin r_bin_plugin_kernelcache = {
