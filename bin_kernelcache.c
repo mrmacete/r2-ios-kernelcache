@@ -51,6 +51,8 @@ typedef struct _RKext {
 	ut64 vaddr;
 	struct MACH0_(obj_t) * mach0;
 	bool own_name;
+	ut64 pa2va_exec;
+	ut64 pa2va_data;
 } RKext;
 
 typedef struct _RKextIndex {
@@ -167,6 +169,8 @@ static void r_kext_index_free(RKextIndex * index);
 static RKext *r_kext_index_vget(RKextIndex *index, ut64 vaddr);
 static RKext *r_kext_index_pget(RKextIndex *index, ut64 offset);
 
+static void process_kmod_init_term(RKernelCacheObj *obj, RKext *kext, RList *ret, ut64 **inits, ut64 **terms);
+static void create_initterm_syms(RKext * kext, RList * ret, int type, ut64 * pointers);
 static void process_constructors(RKernelCacheObj *obj, struct MACH0_(obj_t) *mach0, RList *ret, ut64 paddr, bool is_first, int mode, const char *prefix);
 static RBinAddr* newEntry(ut64 haddr, ut64 vaddr, int type);
 
@@ -553,6 +557,8 @@ static RList * carve_kexts(RKernelCacheObj * obj) {
 
 		r_kext_fill_text_range (kext);
 		kext->vaddr = K_PPTR (kext->vaddr);
+		kext->pa2va_exec = pa2va_exec;
+		kext->pa2va_data = pa2va_data;
 
 		ut64 text_start = kext->vaddr;
 		ut64 text_end = text_start + kext->text_range.size;
@@ -789,6 +795,100 @@ static RList* entries(RBinFile *bf) {
 	process_constructors (kobj, kobj->mach0, ret, 0, true, R_K_CONSTRUCTOR_TO_ENTRY, NULL);
 
 	return ret;
+}
+
+static void process_kmod_init_term(RKernelCacheObj *obj, RKext *kext, RList *ret, ut64 **inits, ut64 **terms) {
+	if (!*inits || !*terms) {
+		struct section_t *sections = NULL;
+		if (!(sections = MACH0_(get_sections) (obj->mach0))) {
+			return;
+		}
+
+		int i = 0;
+		for (; !sections[i].last; i++) {
+			if (sections[i].size == 0) {
+				continue;
+			}
+
+			ut64 start_paddr = 0;
+			ut64 * target = NULL;
+			int n_ptrs = 0;
+
+			if (!*inits && strstr (sections[i].name, "__kmod_init")) {
+				int n_inits = sections[i].size / 8;
+				if (n_inits <= 0) {
+					continue;
+				}
+				*inits = R_NEWS0 (ut64, n_inits + 1);
+				target = *inits;
+				n_ptrs = n_inits;
+			}
+			if (!*terms && strstr (sections[i].name, "__kmod_term")) {
+				int n_terms = sections[i].size / 8;
+				if (n_terms <= 0) {
+					continue;
+				}
+				*terms = R_NEWS0 (ut64, n_terms + 1);
+				target = *terms;
+				n_ptrs = n_terms;
+			}
+			if (!target || !n_ptrs) {
+				continue;
+			}
+			start_paddr = sections[i].offset;
+			int j = 0;
+			ut8 bytes[8];
+			for (; j < n_ptrs; j++) {
+				if (r_buf_read_at (obj->cache_buf, start_paddr + j * 8, bytes, 8) < 8) {
+					break;
+				}
+				target[j] = K_RPTR (bytes);
+			}
+			target[j] = 0;
+		}
+
+		R_FREE (sections);
+	}
+
+	if (*inits) {
+		create_initterm_syms (kext, ret, R_BIN_ENTRY_TYPE_INIT, *inits);
+	}
+	if (*terms) {
+		create_initterm_syms (kext, ret, R_BIN_ENTRY_TYPE_FINI, *terms);
+	}
+}
+
+static void create_initterm_syms(RKext * kext, RList * ret, int type, ut64 * pointers) {
+	int i = 0;
+	int count = 0;
+	for (; pointers[i]; i++) {
+		ut64 func_vaddr = pointers[i];
+		ut64 text_start = kext->vaddr;
+		ut64 text_end = text_start + kext->text_range.size;
+
+		if (text_start == text_end) {
+			continue;
+		}
+
+		if (text_start > func_vaddr || func_vaddr >= text_end) {
+			continue;
+		}
+
+		RBinSymbol * sym = R_NEW0 (RBinSymbol);
+		if (!sym) {
+			break;
+		}
+
+		sym->name = r_str_newf ("%s.%s.%d", KEXT_SHORT_NAME (kext), (type == R_BIN_ENTRY_TYPE_INIT) ? "init" : "fini", count++);
+		sym->vaddr = func_vaddr;
+		sym->paddr = func_vaddr - kext->pa2va_exec;
+		sym->size = 0;
+		sym->forwarder = r_str_const ("NONE");
+		sym->bind = r_str_const ("GLOBAL");
+		sym->type = r_str_const ("FUNC");
+
+		r_list_append (ret, sym);
+	}
 }
 
 static void process_constructors(RKernelCacheObj *obj, struct MACH0_(obj_t) *mach0, RList *ret, ut64 paddr, bool is_first, int mode, const char *prefix) {
@@ -1040,6 +1140,8 @@ static RList* symbols(RBinFile *bf) {
 
 	RKext * kext;
 	int kiter;
+	ut64 * inits = NULL;
+	ut64 * terms = NULL;
 	r_kext_index_foreach (obj->kexts, kiter, kext) {
 		ut8 magicbytes[4];
 		r_buf_read_at (obj->cache_buf, kext->range.offset, magicbytes, 4);
@@ -1049,6 +1151,7 @@ static RList* symbols(RBinFile *bf) {
 			symbols_from_mach0 (ret, kext->mach0, bf, kext->range.offset, r_list_length (ret));
 			symbols_from_stubs (ret, kernel_syms_by_addr, obj, bf, kext, r_list_length (ret));
 			process_constructors (obj, kext->mach0, ret, kext->range.offset, false, R_K_CONSTRUCTOR_TO_SYMBOL, KEXT_SHORT_NAME (kext));
+			process_kmod_init_term (obj, kext, ret, &inits, &terms);
 
 			break;
 		default:
@@ -1056,6 +1159,9 @@ static RList* symbols(RBinFile *bf) {
 			break;
 		}
 	}
+
+	R_FREE (inits);
+	R_FREE (terms);
 
 	sdb_ht_free (kernel_syms_by_addr);
 
