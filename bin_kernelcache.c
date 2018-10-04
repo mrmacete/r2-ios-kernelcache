@@ -76,6 +76,11 @@ typedef struct _RParsedPointer {
 	ut64 address;
 } RParsedPointer;
 
+typedef struct _RKmodInfo {
+	char name[0x41];
+	ut64 start;
+} RKmodInfo;
+
 #define KEXT_SHORT_NAME(kext) ({\
 	const char * sn = strrchr (kext->name, '.');\
 	sn ? sn + 1 : kext->name;\
@@ -490,10 +495,40 @@ static RList * carve_kexts(RKernelCacheObj * obj) {
 
 	int n_kmod_info = (kmod_info_end - kmod_info) / 8;
 	if (n_kmod_info == 0) {
-		return NULL;
+		goto beach;
 	}
 
-	bool * kmod_info_used = R_NEWS0 (bool, n_kmod_info);
+	RKmodInfo * all_infos = R_NEWS0 (RKmodInfo, n_kmod_info);
+	if (!all_infos) {
+		goto beach;
+	}
+
+	ut8 bytes[8];
+	int j = 0;
+	for (; j < n_kmod_info; j++) {
+		ut64 entry_offset = j * 8 + kmod_info;
+
+		if (r_buf_read_at (obj->cache_buf, entry_offset, bytes, 8) < 8) {
+			goto beach;
+		}
+
+		ut64 kmod_info_paddr = K_RPTR (bytes) - pa2va_data;
+
+		ut64 field_name = kmod_info_paddr + 0x10;
+		ut64 field_start = kmod_info_paddr + 0xb4;
+
+		if (r_buf_read_at (obj->cache_buf, field_start, bytes, 8) < 8) {
+			goto beach;
+		}
+
+		all_infos[j].start = K_RPTR (bytes);
+
+		if (r_buf_read_at (obj->cache_buf, field_name, (ut8 *) all_infos[j].name, 0x40) < 0x40) {
+			goto beach;
+		}
+
+		all_infos[j].name[0x40] = 0;
+	}
 
 	ut64 cursor = kmod_start;
 	for(; cursor < kmod_end; cursor += 8) {
@@ -526,45 +561,14 @@ static RList * carve_kexts(RKernelCacheObj * obj) {
 			continue;
 		}
 
-		int j = 0;
-		for (; j < n_kmod_info; j++) {
-			if (kmod_info_used[j]) {
+		for (j = 0; j < n_kmod_info; j++) {
+			if (text_start > all_infos[j].start || all_infos[j].start >= text_end) {
 				continue;
 			}
 
-			ut64 entry_offset = j * 8 + kmod_info;
-
-			if (r_buf_read_at (obj->cache_buf, entry_offset, bytes, 8) < 8) {
-				break;
-			}
-
-			ut64 kmod_info_paddr = K_RPTR (bytes) - pa2va_data;
-
-			ut64 field_name = kmod_info_paddr + 0x10;
-			ut64 field_start = kmod_info_paddr + 0xb4;
-
-			if (r_buf_read_at (obj->cache_buf, field_start, bytes, 8) < 8) {
-				break;
-			}
-
-			ut64 start_at = K_RPTR (bytes);
-			if (text_start > start_at || start_at >= text_end) {
-				continue;
-			}
-
-			kext->name = (char *) malloc (0x41);
-			if (kext->name) {
-				if (r_buf_read_at (obj->cache_buf, field_name, (ut8 *) kext->name, 0x40) < 0x40) {
-					R_FREE (kext->name);
-					kext->name = NULL;
-					break;
-				}
-
-				kext->name[0x40] = 0;
-				kext->own_name = true;
-
-				break;
-			}
+			kext->name = strdup (all_infos[j].name);
+			kext->own_name = true;
+			break;
 		}
 
 		if (!kext->name) {
@@ -575,12 +579,12 @@ static RList * carve_kexts(RKernelCacheObj * obj) {
 		r_list_push (kexts, kext);
 	}
 
-	R_FREE (kmod_info_used);
+	R_FREE (all_infos);
 	return kexts;
 
 beach:
 	r_list_free (kexts);
-	R_FREE (kmod_info_used);
+	R_FREE (all_infos);
 	return NULL;
 }
 
