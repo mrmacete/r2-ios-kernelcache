@@ -39,7 +39,7 @@ typedef struct r_bin_elf_symbol_t {
 	int last;
 	bool in_shdr;
 	bool is_sht_null;
-	bool is_value;  /* when true, sym has no paddr, only vaddr */
+	bool is_vaddr; /* when true, offset is virtual address, otherwise it's physical */
 } RBinElfSymbol;
 
 typedef struct r_bin_elf_reloc_t {
@@ -132,8 +132,8 @@ ut64 Elf_(r_bin_elf_get_main_offset)(struct Elf_(r_bin_elf_obj_t) *bin);
 ut64 Elf_(r_bin_elf_get_init_offset)(struct Elf_(r_bin_elf_obj_t) *bin);
 ut64 Elf_(r_bin_elf_get_fini_offset)(struct Elf_(r_bin_elf_obj_t) *bin);
 char *Elf_(r_bin_elf_intrp)(struct Elf_(r_bin_elf_obj_t) *bin);
-int Elf_(r_bin_elf_get_stripped)(struct Elf_(r_bin_elf_obj_t) *bin);
-int Elf_(r_bin_elf_get_static)(struct Elf_(r_bin_elf_obj_t) *bin);
+bool Elf_(r_bin_elf_get_stripped)(struct Elf_(r_bin_elf_obj_t) *bin);
+bool Elf_(r_bin_elf_is_static)(struct Elf_(r_bin_elf_obj_t) *bin);
 char* Elf_(r_bin_elf_get_data_encoding)(struct Elf_(r_bin_elf_obj_t) *bin);
 char* Elf_(r_bin_elf_get_arch)(struct Elf_(r_bin_elf_obj_t) *bin);
 char* Elf_(r_bin_elf_get_machine_name)(struct Elf_(r_bin_elf_obj_t) *bin);

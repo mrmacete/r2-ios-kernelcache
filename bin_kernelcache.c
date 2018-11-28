@@ -150,7 +150,7 @@ static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinF
 static void handle_data_sections(RBinSection *sect);
 static void symbols_from_mach0(RList *ret, struct MACH0_(obj_t) * mach0, RBinFile *bf, ut64 paddr, int ordinal);
 static RList *resolve_syscalls(RKernelCacheObj * obj, ut64 enosys_addr);
-static void symbols_from_stubs(RList *ret, SdbHt *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
+static void symbols_from_stubs(RList *ret, HtPP *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal);
 static RStubsInfo *get_stubs_info(struct MACH0_(obj_t) * mach0, ut64 paddr, RKernelCacheObj * obj);
 static int prot2perm (int x);
 
@@ -970,8 +970,9 @@ static bool check_bytes(const ut8 *buf, ut64 length) {
 	return true;
 }
 
-static void *load_bytes(RBinFile *bf, const ut8 *buf, ut64 sz, ut64 loadaddr, Sdb *sdb) {
-	return (void *) (size_t) check_bytes (buf, sz);
+
+static bool load_bytes(RBinFile *bf, void **bin_obj, const ut8 *buf, ut64 sz, ut64 loadaddr, Sdb *sdb) {
+	return (bool) check_bytes (buf, sz);
 }
 
 static RList* sections(RBinFile *bf) {
@@ -1018,7 +1019,7 @@ static RList* sections(RBinFile *bf) {
 		seg = &kobj->mach0->segs[i];
 		r_str_ncpy (segname, seg->segname, 17);
 		r_str_filter (segname, -1);
-		r_snprintf (ptr->name, R_BIN_SIZEOF_STRINGS, "%d.%s", i, segname);
+		ptr->name = r_str_newf ("%d.%s", i, segname);
 		ptr->name[R_BIN_SIZEOF_STRINGS] = 0;
 		ptr->size = seg->vmsize;
 		ptr->vsize = seg->vmsize;
@@ -1059,9 +1060,9 @@ static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinF
 			break;
 		}
 		if (prefix) {
-			r_snprintf (ptr->name, R_BIN_SIZEOF_STRINGS, "%s.%s", prefix, (char*)sections[i].name);
+			ptr->name = r_str_newf ("%s.%s", prefix, (char*)sections[i].name);
 		} else {
-			r_snprintf (ptr->name, R_BIN_SIZEOF_STRINGS, "%s", (char*)sections[i].name);
+			ptr->name = r_str_newf ("%s", (char*)sections[i].name);
 		}
 		if (strstr (ptr->name, "la_symbol_ptr")) {
 			int len = sections[i].size / 8;
@@ -1110,7 +1111,7 @@ static RList* symbols(RBinFile *bf) {
 
 	symbols_from_mach0 (ret, obj->mach0, bf, 0, 0);
 
-	SdbHt *kernel_syms_by_addr = sdb_ht_new ();
+	HtPP *kernel_syms_by_addr = sdb_ht_new ();
 	if (!kernel_syms_by_addr) {
 		r_list_free (ret);
 		return NULL;
@@ -1374,7 +1375,7 @@ static ut64 extract_addr_from_code(ut8 * arm64_code, ut64 vaddr) {
 	return addr;
 }
 
-static void symbols_from_stubs(RList *ret, SdbHt *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal) {
+static void symbols_from_stubs(RList *ret, HtPP *kernel_syms_by_addr, RKernelCacheObj * obj, RBinFile *bf, RKext * kext, int ordinal) {
 	RStubsInfo * stubs_info = get_stubs_info(kext->mach0, kext->range.offset, obj);
 	if (!stubs_info) {
 		return;
