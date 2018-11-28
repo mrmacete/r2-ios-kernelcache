@@ -1020,7 +1020,6 @@ static RList* sections(RBinFile *bf) {
 		r_str_ncpy (segname, seg->segname, 17);
 		r_str_filter (segname, -1);
 		ptr->name = r_str_newf ("%d.%s", i, segname);
-		ptr->name[R_BIN_SIZEOF_STRINGS] = 0;
 		ptr->size = seg->vmsize;
 		ptr->vsize = seg->vmsize;
 		ptr->paddr = seg->fileoff + bf->o->boffset;
@@ -1068,7 +1067,6 @@ static void sections_from_mach0(RList * ret, struct MACH0_(obj_t) * mach0, RBinF
 			int len = sections[i].size / 8;
 			ptr->format = r_str_newf ("Cd %d[%d]", 8, len);
 		}
-		ptr->name[R_BIN_SIZEOF_STRINGS] = 0;
 		handle_data_sections (ptr);
 		ptr->size = sections[i].size;
 		ptr->vsize = sections[i].vsize;
