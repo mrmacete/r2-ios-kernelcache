@@ -1,0 +1,1006 @@
+[
+    {
+        "num": 65,
+        "name": "mach_notify_port_deleted"
+    },
+    {
+        "num": 70,
+        "name": "mach_notify_no_senders"
+    },
+    {
+        "num": 71,
+        "name": "mach_notify_send_once"
+    },
+    {
+        "num": 72,
+        "name": "mach_notify_dead_name"
+    },
+    {
+        "num": 200,
+        "name": "host_info"
+    },
+    {
+        "num": 201,
+        "name": "host_kernel_version"
+    },
+    {
+        "num": 202,
+        "name": "_host_page_size"
+    },
+    {
+        "num": 203,
+        "name": "mach_memory_object_memory_entry"
+    },
+    {
+        "num": 204,
+        "name": "host_processor_info"
+    },
+    {
+        "num": 205,
+        "name": "host_get_io_master"
+    },
+    {
+        "num": 206,
+        "name": "host_get_clock_service"
+    },
+    {
+        "num": 207,
+        "name": "kmod_get_info"
+    },
+    {
+        "num": 209,
+        "name": "host_virtual_physical_table_info"
+    },
+    {
+        "num": 213,
+        "name": "processor_set_default"
+    },
+    {
+        "num": 214,
+        "name": "processor_set_create"
+    },
+    {
+        "num": 215,
+        "name": "mach_memory_object_memory_entry_64"
+    },
+    {
+        "num": 216,
+        "name": "host_statistics"
+    },
+    {
+        "num": 217,
+        "name": "host_request_notification"
+    },
+    {
+        "num": 218,
+        "name": "host_lockgroup_info"
+    },
+    {
+        "num": 219,
+        "name": "host_statistics64"
+    },
+    {
+        "num": 220,
+        "name": "mach_zone_info"
+    },
+    {
+        "num": 221,
+        "name": "mach_zone_force_gc"
+    },
+    {
+        "num": 222,
+        "name": "host_create_mach_voucher"
+    },
+    {
+        "num": 223,
+        "name": "host_register_mach_voucher_attr_manager"
+    },
+    {
+        "num": 224,
+        "name": "host_register_well_known_mach_voucher_attr_manager"
+    },
+    {
+        "num": 225,
+        "name": "host_set_atm_diagnostic_flag"
+    },
+    {
+        "num": 227,
+        "name": "mach_memory_info"
+    },
+    {
+        "num": 228,
+        "name": "host_set_multiuser_config_flags"
+    },
+    {
+        "num": 231,
+        "name": "mach_zone_info_for_zone"
+    },
+    {
+        "num": 232,
+        "name": "mach_zone_info_for_largest_zone"
+    },
+    {
+        "num": 233,
+        "name": "mach_zone_get_zlog_zones"
+    },
+    {
+        "num": 234,
+        "name": "mach_zone_get_btlog_records"
+    },
+    {
+        "num": 400,
+        "name": "host_get_boot_info"
+    },
+    {
+        "num": 401,
+        "name": "host_reboot"
+    },
+    {
+        "num": 402,
+        "name": "host_priv_statistics"
+    },
+    {
+        "num": 403,
+        "name": "host_default_memory_manager"
+    },
+    {
+        "num": 404,
+        "name": "vm_wire"
+    },
+    {
+        "num": 405,
+        "name": "thread_wire"
+    },
+    {
+        "num": 406,
+        "name": "vm_allocate_cpm"
+    },
+    {
+        "num": 407,
+        "name": "host_processors"
+    },
+    {
+        "num": 408,
+        "name": "host_get_clock_control"
+    },
+    {
+        "num": 409,
+        "name": "kmod_create"
+    },
+    {
+        "num": 410,
+        "name": "kmod_destroy"
+    },
+    {
+        "num": 411,
+        "name": "kmod_control"
+    },
+    {
+        "num": 412,
+        "name": "host_get_special_port"
+    },
+    {
+        "num": 413,
+        "name": "host_set_special_port"
+    },
+    {
+        "num": 414,
+        "name": "host_set_exception_ports"
+    },
+    {
+        "num": 415,
+        "name": "host_get_exception_ports"
+    },
+    {
+        "num": 416,
+        "name": "host_swap_exception_ports"
+    },
+    {
+        "num": 418,
+        "name": "mach_vm_wire"
+    },
+    {
+        "num": 419,
+        "name": "host_processor_sets"
+    },
+    {
+        "num": 420,
+        "name": "host_processor_set_priv"
+    },
+    {
+        "num": 423,
+        "name": "host_set_UNDServer"
+    },
+    {
+        "num": 424,
+        "name": "host_get_UNDServer"
+    },
+    {
+        "num": 425,
+        "name": "kext_request"
+    },
+    {
+        "num": 600,
+        "name": "host_security_create_task_token"
+    },
+    {
+        "num": 601,
+        "name": "host_security_set_task_token"
+    },
+    {
+        "num": 1000,
+        "name": "clock_get_time"
+    },
+    {
+        "num": 1001,
+        "name": "clock_get_attributes"
+    },
+    {
+        "num": 1002,
+        "name": "clock_alarm"
+    },
+    {
+        "num": 1040,
+        "name": "netname_check_in"
+    },
+    {
+        "num": 1041,
+        "name": "netname_look_up"
+    },
+    {
+        "num": 1042,
+        "name": "netname_check_out"
+    },
+    {
+        "num": 1043,
+        "name": "netname_version"
+    },
+    {
+        "num": 1200,
+        "name": "clock_set_time"
+    },
+    {
+        "num": 1201,
+        "name": "clock_set_attributes"
+    },
+    {
+        "num": 2401,
+        "name": "exception_raise"
+    },
+    {
+        "num": 2402,
+        "name": "exception_raise_state"
+    },
+    {
+        "num": 2403,
+        "name": "exception_raise_state_identity"
+    },
+    {
+        "num": 3000,
+        "name": "processor_start"
+    },
+    {
+        "num": 3001,
+        "name": "processor_exit"
+    },
+    {
+        "num": 3002,
+        "name": "processor_info"
+    },
+    {
+        "num": 3003,
+        "name": "processor_control"
+    },
+    {
+        "num": 3004,
+        "name": "processor_assign"
+    },
+    {
+        "num": 3005,
+        "name": "processor_get_assignment"
+    },
+    {
+        "num": 3200,
+        "name": "mach_port_names"
+    },
+    {
+        "num": 3201,
+        "name": "mach_port_type"
+    },
+    {
+        "num": 3202,
+        "name": "mach_port_rename"
+    },
+    {
+        "num": 3203,
+        "name": "mach_port_allocate_name"
+    },
+    {
+        "num": 3204,
+        "name": "mach_port_allocate"
+    },
+    {
+        "num": 3205,
+        "name": "mach_port_destroy"
+    },
+    {
+        "num": 3206,
+        "name": "mach_port_deallocate"
+    },
+    {
+        "num": 3207,
+        "name": "mach_port_get_refs"
+    },
+    {
+        "num": 3208,
+        "name": "mach_port_mod_refs"
+    },
+    {
+        "num": 3209,
+        "name": "mach_port_peek"
+    },
+    {
+        "num": 3210,
+        "name": "mach_port_set_mscount"
+    },
+    {
+        "num": 3211,
+        "name": "mach_port_get_set_status"
+    },
+    {
+        "num": 3212,
+        "name": "mach_port_move_member"
+    },
+    {
+        "num": 3213,
+        "name": "mach_port_request_notification"
+    },
+    {
+        "num": 3214,
+        "name": "mach_port_insert_right"
+    },
+    {
+        "num": 3215,
+        "name": "mach_port_extract_right"
+    },
+    {
+        "num": 3216,
+        "name": "mach_port_set_seqno"
+    },
+    {
+        "num": 3217,
+        "name": "mach_port_get_attributes"
+    },
+    {
+        "num": 3218,
+        "name": "mach_port_set_attributes"
+    },
+    {
+        "num": 3219,
+        "name": "mach_port_allocate_qos"
+    },
+    {
+        "num": 3220,
+        "name": "mach_port_allocate_full"
+    },
+    {
+        "num": 3221,
+        "name": "task_set_port_space"
+    },
+    {
+        "num": 3222,
+        "name": "mach_port_get_srights"
+    },
+    {
+        "num": 3223,
+        "name": "mach_port_space_info"
+    },
+    {
+        "num": 3224,
+        "name": "mach_port_dnrequest_info"
+    },
+    {
+        "num": 3225,
+        "name": "mach_port_kernel_object"
+    },
+    {
+        "num": 3226,
+        "name": "mach_port_insert_member"
+    },
+    {
+        "num": 3227,
+        "name": "mach_port_extract_member"
+    },
+    {
+        "num": 3228,
+        "name": "mach_port_get_context"
+    },
+    {
+        "num": 3229,
+        "name": "mach_port_set_context"
+    },
+    {
+        "num": 3230,
+        "name": "mach_port_kobject"
+    },
+    {
+        "num": 3231,
+        "name": "mach_port_construct"
+    },
+    {
+        "num": 3232,
+        "name": "mach_port_destruct"
+    },
+    {
+        "num": 3233,
+        "name": "mach_port_guard"
+    },
+    {
+        "num": 3234,
+        "name": "mach_port_unguard"
+    },
+    {
+        "num": 3235,
+        "name": "mach_port_space_basic_info"
+    },
+    {
+        "num": 3236,
+        "name": "mach_port_special_reply_port_reset_link"
+    },
+    {
+        "num": 3400,
+        "name": "task_create"
+    },
+    {
+        "num": 3401,
+        "name": "task_terminate"
+    },
+    {
+        "num": 3402,
+        "name": "task_threads"
+    },
+    {
+        "num": 3403,
+        "name": "mach_ports_register"
+    },
+    {
+        "num": 3404,
+        "name": "mach_ports_lookup"
+    },
+    {
+        "num": 3405,
+        "name": "task_info"
+    },
+    {
+        "num": 3406,
+        "name": "task_set_info"
+    },
+    {
+        "num": 3407,
+        "name": "task_suspend"
+    },
+    {
+        "num": 3408,
+        "name": "task_resume"
+    },
+    {
+        "num": 3409,
+        "name": "task_get_special_port"
+    },
+    {
+        "num": 3410,
+        "name": "task_set_special_port"
+    },
+    {
+        "num": 3411,
+        "name": "thread_create"
+    },
+    {
+        "num": 3412,
+        "name": "thread_create_running"
+    },
+    {
+        "num": 3413,
+        "name": "task_set_exception_ports"
+    },
+    {
+        "num": 3414,
+        "name": "task_get_exception_ports"
+    },
+    {
+        "num": 3415,
+        "name": "task_swap_exception_ports"
+    },
+    {
+        "num": 3416,
+        "name": "lock_set_create"
+    },
+    {
+        "num": 3417,
+        "name": "lock_set_destroy"
+    },
+    {
+        "num": 3418,
+        "name": "semaphore_create"
+    },
+    {
+        "num": 3419,
+        "name": "semaphore_destroy"
+    },
+    {
+        "num": 3420,
+        "name": "task_policy_set"
+    },
+    {
+        "num": 3421,
+        "name": "task_policy_get"
+    },
+    {
+        "num": 3422,
+        "name": "task_sample"
+    },
+    {
+        "num": 3423,
+        "name": "task_policy"
+    },
+    {
+        "num": 3424,
+        "name": "task_set_emulation"
+    },
+    {
+        "num": 3425,
+        "name": "task_get_emulation_vector"
+    },
+    {
+        "num": 3426,
+        "name": "task_set_emulation_vector"
+    },
+    {
+        "num": 3427,
+        "name": "task_set_ras_pc"
+    },
+    {
+        "num": 3428,
+        "name": "task_zone_info"
+    },
+    {
+        "num": 3429,
+        "name": "task_assign"
+    },
+    {
+        "num": 3430,
+        "name": "task_assign_default"
+    },
+    {
+        "num": 3431,
+        "name": "task_get_assignment"
+    },
+    {
+        "num": 3432,
+        "name": "task_set_policy"
+    },
+    {
+        "num": 3433,
+        "name": "task_get_state"
+    },
+    {
+        "num": 3434,
+        "name": "task_set_state"
+    },
+    {
+        "num": 3435,
+        "name": "task_set_phys_footprint_limit"
+    },
+    {
+        "num": 3436,
+        "name": "task_suspend2"
+    },
+    {
+        "num": 3437,
+        "name": "task_resume2"
+    },
+    {
+        "num": 3438,
+        "name": "task_purgable_info"
+    },
+    {
+        "num": 3439,
+        "name": "task_get_mach_voucher"
+    },
+    {
+        "num": 3440,
+        "name": "task_set_mach_voucher"
+    },
+    {
+        "num": 3441,
+        "name": "task_swap_mach_voucher"
+    },
+    {
+        "num": 3442,
+        "name": "task_generate_corpse"
+    },
+    {
+        "num": 3443,
+        "name": "task_map_corpse_info"
+    },
+    {
+        "num": 3444,
+        "name": "task_register_dyld_image_infos"
+    },
+    {
+        "num": 3445,
+        "name": "task_unregister_dyld_image_infos"
+    },
+    {
+        "num": 3446,
+        "name": "task_get_dyld_image_infos"
+    },
+    {
+        "num": 3447,
+        "name": "task_register_dyld_shared_cache_image_info"
+    },
+    {
+        "num": 3448,
+        "name": "task_register_dyld_set_dyld_state"
+    },
+    {
+        "num": 3449,
+        "name": "task_register_dyld_get_process_state"
+    },
+    {
+        "num": 3450,
+        "name": "task_map_corpse_info_64"
+    },
+    {
+        "num": 3451,
+        "name": "task_inspect"
+    },
+    {
+        "num": 3600,
+        "name": "thread_terminate"
+    },
+    {
+        "num": 3601,
+        "name": "act_get_state"
+    },
+    {
+        "num": 3602,
+        "name": "act_set_state"
+    },
+    {
+        "num": 3603,
+        "name": "thread_get_state"
+    },
+    {
+        "num": 3604,
+        "name": "thread_set_state"
+    },
+    {
+        "num": 3605,
+        "name": "thread_suspend"
+    },
+    {
+        "num": 3606,
+        "name": "thread_resume"
+    },
+    {
+        "num": 3607,
+        "name": "thread_abort"
+    },
+    {
+        "num": 3608,
+        "name": "thread_abort_safely"
+    },
+    {
+        "num": 3609,
+        "name": "thread_depress_abort"
+    },
+    {
+        "num": 3610,
+        "name": "thread_get_special_port"
+    },
+    {
+        "num": 3611,
+        "name": "thread_set_special_port"
+    },
+    {
+        "num": 3612,
+        "name": "thread_info"
+    },
+    {
+        "num": 3613,
+        "name": "thread_set_exception_ports"
+    },
+    {
+        "num": 3614,
+        "name": "thread_get_exception_ports"
+    },
+    {
+        "num": 3615,
+        "name": "thread_swap_exception_ports"
+    },
+    {
+        "num": 3616,
+        "name": "thread_policy"
+    },
+    {
+        "num": 3617,
+        "name": "thread_policy_set"
+    },
+    {
+        "num": 3618,
+        "name": "thread_policy_get"
+    },
+    {
+        "num": 3619,
+        "name": "thread_sample"
+    },
+    {
+        "num": 3620,
+        "name": "etap_trace_thread"
+    },
+    {
+        "num": 3621,
+        "name": "thread_assign"
+    },
+    {
+        "num": 3622,
+        "name": "thread_assign_default"
+    },
+    {
+        "num": 3623,
+        "name": "thread_get_assignment"
+    },
+    {
+        "num": 3624,
+        "name": "thread_set_policy"
+    },
+    {
+        "num": 3625,
+        "name": "thread_get_mach_voucher"
+    },
+    {
+        "num": 3626,
+        "name": "thread_set_mach_voucher"
+    },
+    {
+        "num": 3627,
+        "name": "thread_swap_mach_voucher"
+    },
+    {
+        "num": 4000,
+        "name": "processor_set_statistics"
+    },
+    {
+        "num": 4001,
+        "name": "processor_set_destroy"
+    },
+    {
+        "num": 4002,
+        "name": "processor_set_max_priority"
+    },
+    {
+        "num": 4003,
+        "name": "processor_set_policy_enable"
+    },
+    {
+        "num": 4004,
+        "name": "processor_set_policy_disable"
+    },
+    {
+        "num": 4005,
+        "name": "processor_set_tasks"
+    },
+    {
+        "num": 4006,
+        "name": "processor_set_threads"
+    },
+    {
+        "num": 4007,
+        "name": "processor_set_policy_control"
+    },
+    {
+        "num": 4008,
+        "name": "processor_set_stack_usage"
+    },
+    {
+        "num": 4009,
+        "name": "processor_set_info"
+    },
+    {
+        "num": 4800,
+        "name": "mach_vm_allocate"
+    },
+    {
+        "num": 4801,
+        "name": "mach_vm_deallocate"
+    },
+    {
+        "num": 4802,
+        "name": "mach_vm_protect"
+    },
+    {
+        "num": 4803,
+        "name": "vm_inherit"
+    },
+    {
+        "num": 4803,
+        "name": "mach_vm_inherit"
+    },
+    {
+        "num": 4804,
+        "name": "vm_read"
+    },
+    {
+        "num": 4804,
+        "name": "mach_vm_read"
+    },
+    {
+        "num": 4805,
+        "name": "vm_read_list"
+    },
+    {
+        "num": 4805,
+        "name": "mach_vm_read_list"
+    },
+    {
+        "num": 4806,
+        "name": "vm_write"
+    },
+    {
+        "num": 4806,
+        "name": "mach_vm_write"
+    },
+    {
+        "num": 4807,
+        "name": "vm_copy"
+    },
+    {
+        "num": 4807,
+        "name": "mach_vm_copy"
+    },
+    {
+        "num": 4808,
+        "name": "vm_read_overwrite"
+    },
+    {
+        "num": 4808,
+        "name": "mach_vm_read_overwrite"
+    },
+    {
+        "num": 4809,
+        "name": "mach_vm_msync"
+    },
+    {
+        "num": 4809,
+        "name": "vm_msync"
+    },
+    {
+        "num": 4810,
+        "name": "vm_behavior_set"
+    },
+    {
+        "num": 4810,
+        "name": "mach_vm_behavior_set"
+    },
+    {
+        "num": 4811,
+        "name": "vm_map"
+    },
+    {
+        "num": 4811,
+        "name": "mach_vm_map"
+    },
+    {
+        "num": 4812,
+        "name": "vm_machine_attribute"
+    },
+    {
+        "num": 4812,
+        "name": "mach_vm_machine_attribute"
+    },
+    {
+        "num": 4813,
+        "name": "mach_vm_remap"
+    },
+    {
+        "num": 4813,
+        "name": "vm_remap"
+    },
+    {
+        "num": 4814,
+        "name": "mach_vm_page_query"
+    },
+    {
+        "num": 4814,
+        "name": "vm_map_page_query"
+    },
+    {
+        "num": 4815,
+        "name": "vm_region_recurse_64"
+    },
+    {
+        "num": 4815,
+        "name": "mach_vm_region_recurse"
+    },
+    {
+        "num": 4816,
+        "name": "mach_vm_region"
+    },
+    {
+        "num": 4816,
+        "name": "vm_region_64"
+    },
+    {
+        "num": 4817,
+        "name": "mach_make_memory_entry"
+    },
+    {
+        "num": 4817,
+        "name": "mach_make_memory_entry_64"
+    },
+    {
+        "num": 4818,
+        "name": "vm_purgable_control"
+    },
+    {
+        "num": 4818,
+        "name": "mach_vm_purgable_control"
+    },
+    {
+        "num": 4819,
+        "name": "mach_vm_page_info"
+    },
+    {
+        "num": 4820,
+        "name": "mach_vm_page_range_query"
+    },
+    {
+        "num": 5400,
+        "name": "mach_voucher_extract_attr_content"
+    },
+    {
+        "num": 5401,
+        "name": "mach_voucher_extract_attr_recipe"
+    },
+    {
+        "num": 5402,
+        "name": "mach_voucher_extract_all_attr_recipes"
+    },
+    {
+        "num": 5403,
+        "name": "mach_voucher_attr_command"
+    },
+    {
+        "num": 5404,
+        "name": "mach_voucher_debug_info"
+    },
+    {
+        "num": 617000,
+        "name": "lock_acquire"
+    },
+    {
+        "num": 617001,
+        "name": "lock_release"
+    },
+    {
+        "num": 617002,
+        "name": "lock_try"
+    },
+    {
+        "num": 617003,
+        "name": "lock_make_stable"
+    },
+    {
+        "num": 617004,
+        "name": "lock_handoff"
+    },
+    {
+        "num": 617005,
+        "name": "lock_handoff_accept"
+    },
+    {
+        "num": 3125107,
+        "name": "clock_alarm_reply"
+    }
+]

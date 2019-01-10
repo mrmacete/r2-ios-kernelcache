@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2018 - mrmacete */
+/* radare2 - LGPL - Copyright 2019 - mrmacete */
 
 #include <r_types.h>
 #include <r_util.h>
@@ -12,6 +12,7 @@
 #include "format/mach0/mach0.h"
 
 #include "r_cf_dict.h"
+#include "mig_routines.h"
 
 typedef bool (* ROnRebaseFunc) (ut64 offset, ut64 decorated_addr, void * user_data);
 
@@ -1381,6 +1382,22 @@ beach:
 #define K_MIG_ROUTINE_SIZE (5 * 8)
 #define K_MIG_MAX_ROUTINES 100
 
+static HtPP *mig_routines_hash_new() {
+	HtPP *hash = sdb_ht_new ();
+	if (!hash) {
+		return NULL;
+	}
+
+	int i;
+	for (i = 0; i < R_MIG_ROUTINES_LEN; i += 2) {
+		const char * num = mig_routines[i];
+		const char * name = mig_routines[i+1];
+		sdb_ht_insert (hash, num, name);
+	}
+
+	return hash;
+}
+
 static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 	struct section_t *sections = NULL;
 	if (!(sections = MACH0_(get_sections) (obj->mach0))) {
@@ -1423,6 +1440,11 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 
 	subsystem = r_list_newf (r_bin_symbol_free);
 	if (!subsystem) {
+		goto beach;
+	}
+
+	HtPP *routines_hash = mig_routines_hash_new ();
+	if (!routines_hash) {
 		goto beach;
 	}
 
@@ -1481,7 +1503,16 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 					goto beach;
 				}
 
-				sym->name = r_str_newf ("mig.%d", idx + subs_min_idx);
+				int num = idx + subs_min_idx;
+				bool found = false;
+				const char *key = sdb_fmt ("%d", num);
+				const char *name = sdb_ht_find (routines_hash, key, &found);
+				if (found && name && *name) {
+					sym->name = r_str_newf ("mig.%d.%s", num, name);
+				} else {
+					sym->name = r_str_newf ("mig.%d", num);
+				}
+
 				sym->vaddr = routine_p;
 				sym->paddr = sym->vaddr - text_exec_vaddr + text_exec_offset;
 				sym->size = 0;
@@ -1499,6 +1530,7 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 		R_FREE (routines);
 	}
 
+	sdb_ht_free (routines_hash);
 	R_FREE (data_const);
 	R_FREE (sections);
 	return subsystem;
@@ -1506,6 +1538,9 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 beach:
 	if (subsystem) {
 		r_list_free (subsystem);
+	}
+	if (routines_hash) {
+		sdb_ht_free (routines_hash);
 	}
 	R_FREE (data_const);
 	R_FREE (sections);
