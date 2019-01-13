@@ -12,7 +12,7 @@
 #include "format/mach0/mach0.h"
 
 #include "r_cf_dict.h"
-#include "mig_routines.h"
+#include "trace_codes.h"
 
 typedef bool (* ROnRebaseFunc) (ut64 offset, ut64 decorated_addr, void * user_data);
 
@@ -1382,16 +1382,16 @@ beach:
 #define K_MIG_ROUTINE_SIZE (5 * 8)
 #define K_MIG_MAX_ROUTINES 100
 
-static HtPP *mig_routines_hash_new() {
+static HtPP *trace_codes_hash_new() {
 	HtPP *hash = sdb_ht_new ();
 	if (!hash) {
 		return NULL;
 	}
 
 	int i;
-	for (i = 0; i < R_MIG_ROUTINES_LEN; i += 2) {
-		const char * num = mig_routines[i];
-		const char * name = mig_routines[i+1];
+	for (i = 0; i < R_TRACE_CODES_LEN; i += 2) {
+		const char * num = trace_codes[i];
+		const char * name = trace_codes[i+1];
 		sdb_ht_insert (hash, num, name);
 	}
 
@@ -1443,8 +1443,8 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 		goto beach;
 	}
 
-	HtPP *routines_hash = mig_routines_hash_new ();
-	if (!routines_hash) {
+	HtPP *trace_codes_hash = trace_codes_hash_new ();
+	if (!trace_codes_hash) {
 		goto beach;
 	}
 
@@ -1505,8 +1505,8 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 
 				int num = idx + subs_min_idx;
 				bool found = false;
-				const char *key = sdb_fmt ("%d", num);
-				const char *name = sdb_ht_find (routines_hash, key, &found);
+				const char *key = sdb_fmt ("0x%x", (num << 2) | 0xff000000);
+				const char *name = sdb_ht_find (trace_codes_hash, key, &found);
 				if (found && name && *name) {
 					sym->name = r_str_newf ("mig.%d.%s", num, name);
 				} else {
@@ -1530,7 +1530,7 @@ static RList *resolve_mig_subsystem(RKernelCacheObj * obj) {
 		R_FREE (routines);
 	}
 
-	sdb_ht_free (routines_hash);
+	sdb_ht_free (trace_codes_hash);
 	R_FREE (data_const);
 	R_FREE (sections);
 	return subsystem;
@@ -1539,8 +1539,8 @@ beach:
 	if (subsystem) {
 		r_list_free (subsystem);
 	}
-	if (routines_hash) {
-		sdb_ht_free (routines_hash);
+	if (trace_codes_hash) {
+		sdb_ht_free (trace_codes_hash);
 	}
 	R_FREE (data_const);
 	R_FREE (sections);
