@@ -1,5 +1,4 @@
-
-/*
+ /*
  * This file is generated in this way:
  *
  * python2 build_mig_index.py ~/xnu-4570.51.1/bsd/kern/trace_codes traps.json > mig_index.h
@@ -8,7 +7,6 @@
  * The traps.json file is generated from any dyld cache using the machtraps.py r2pipe script.
  *
  */
-
 
 #ifndef R_MIG_INDEX_H
 #define R_MIG_INDEX_H
@@ -43,7 +41,7 @@ static const char * mig_index[R_MIG_INDEX_LEN] = {
 	"219", "host_statistics64",
 	"220", "mach_zone_info",
 	"221", "mach_zone_force_gc",
-	"222", "host_create_mach_voucher",
+	"222", "_kernelrpc_host_create_mach_voucher",
 	"223", "host_register_mach_voucher_attr_manager",
 	"224", "host_register_well_known_mach_voucher_attr_manager",
 	"225", "host_set_atm_diagnostic_flag",
@@ -226,7 +224,7 @@ static const char * mig_index[R_MIG_INDEX_LEN] = {
 	"3206", "mach_port_deallocate",
 	"3207", "mach_port_get_refs",
 	"3208", "mach_port_mod_refs",
-	"3209", "mach_port_peek",
+	"3209", "_kernelrpc_mach_port_peek",
 	"3210", "mach_port_set_mscount",
 	"3211", "mach_port_get_set_status",
 	"3212", "mach_port_move_member",
@@ -248,12 +246,12 @@ static const char * mig_index[R_MIG_INDEX_LEN] = {
 	"3228", "mach_port_get_context",
 	"3229", "mach_port_set_context",
 	"3230", "mach_port_kobject",
-	"3231", "mach_port_construct",
-	"3232", "mach_port_destruct",
-	"3233", "mach_port_guard",
-	"3234", "mach_port_unguard",
-	"3235", "mach_port_space_basic_info",
-	"3236", "mach_port_special_reply_port_reset_link",
+	"3231", "_kernelrpc_mach_port_construct",
+	"3232", "_kernelrpc_mach_port_destruct",
+	"3233", "_kernelrpc_mach_port_guard",
+	"3234", "_kernelrpc_mach_port_unguard",
+	"3235", "_kernelrpc_mach_port_space_basic_info",
+	"3236", "_kernelrpc_mach_port_special_reply_port_reset_link",
 	"3400", "task_create",
 	"3401", "task_terminate",
 	"3402", "task_threads",
@@ -408,7 +406,7 @@ static const char * mig_index[R_MIG_INDEX_LEN] = {
 	"5208", "mac_label_new",
 	"5209", "mac_request_label",
 	"5400", "mach_voucher_extract_attr_content",
-	"5401", "mach_voucher_extract_attr_recipe",
+	"5401", "_kernelrpc_mach_voucher_extract_attr_recipe",
 	"5402", "mach_voucher_extract_all_attr_recipes",
 	"5403", "mach_voucher_attr_command",
 	"5404", "mach_voucher_debug_info",

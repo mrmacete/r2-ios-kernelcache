@@ -1,6 +1,16 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+"""
+Example usage to regenerate traps.json:
+    - open the dyld cache in r2 like this:
+R_DYLDCACHE_FILTER=libsystem_kernel r2 -e bin.usextr=false ~/Library/Developer/Xcode/iOS\ DeviceSupport/12.1.2\ \(16C101\)\ arm64e/Symbols/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e
+
+    - run the script with this command:
+        #!pipe python2 /path/to/this/script.py > traps.json
+
+"""
+
 import r2pipe, json, re
 
 r = r2pipe.open('#!pipe')
@@ -27,7 +37,6 @@ def carve_trap_num (addr, flag):
     r.cmd('aeim')
     min_addr = int(r.cmd('?v ' + flag), 0)
     emu_start = walk_back_until(addr - 4, r'^b|^ret|^invalid', min_addr)
-    print '%s -> 0x%08x' % (flag, emu_start)
     r.cmd('s ' + str(emu_start))
     obj = r.cmd('aefa 0x%08x~[0]:0' % addr)
     r.cmd('s ' + saved_seek)

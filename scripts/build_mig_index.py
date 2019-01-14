@@ -1,7 +1,6 @@
 import sys, re, json
 
-header = """
-/*
+header = """ /*
  * This file is generated in this way:
  *
  * python2 build_mig_index.py ~/xnu-4570.51.1/bsd/kern/trace_codes traps.json > mig_index.h
@@ -39,7 +38,7 @@ def convert (trace_codes, trap_json):
 
     result.sort(key = lambda x: x[0])
 
-    print header + '\n'
+    print header
     print '#ifndef R_MIG_INDEX_H'
     print '#define R_MIG_INDEX_H\n'
 
