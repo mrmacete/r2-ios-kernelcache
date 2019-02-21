@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2017 - cgvwzq */
+/* radare2 - LGPL - Copyright 2017-2018 - cgvwzq */
 
 #include <r_types.h>
 #include <r_util.h>
@@ -63,7 +63,7 @@ struct r_bin_wasm_resizable_limits_t {
 };
 
 typedef struct r_bin_wasm_symbol_t {
-	ut8 id;
+	ut32 id;
 	ut32 name_len;
 	char name[R_BIN_WASM_STRING_LENGTH];
 } RBinWasmSymbol;

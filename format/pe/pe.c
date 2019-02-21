@@ -514,29 +514,6 @@ error:
 	return false;
 }
 
-static char *_time_stamp_to_str(ut32 timeStamp) {
-#ifdef _MSC_VER
-	time_t rawtime;
-	struct tm *tminfo;
-	rawtime = (time_t)timeStamp;
-	tminfo = localtime (&rawtime);
-	//tminfo = gmtime (&rawtime);
-	return r_str_trim (strdup (asctime (tminfo)));
-#else
-	struct my_timezone {
-		int tz_minuteswest;     /* minutes west of Greenwich */
-		int tz_dsttime;         /* type of DST correction */
-	} tz;
-	struct timeval tv;
-	int gmtoff;
-	time_t ts = (time_t) timeStamp;
-	gettimeofday (&tv, (void*) &tz);
-	gmtoff = (int) (tz.tz_minuteswest * 60); // in seconds
-	ts += (time_t)gmtoff;
-	return r_str_trim (strdup (ctime (&ts)));
-#endif
-}
-
 static int bin_pe_init_hdr(struct PE_(r_bin_pe_obj_t)* bin) {
 	if (!(bin->dos_header = malloc (sizeof(PE_(image_dos_header))))) {
 		r_sys_perror ("malloc (dos header)");
@@ -613,7 +590,7 @@ static int bin_pe_init_hdr(struct PE_(r_bin_pe_obj_t)* bin) {
 	// adding compile time to the SDB
 	{
 		sdb_num_set (bin->kv, "image_file_header.TimeDateStamp", bin->nt_headers->file_header.TimeDateStamp, 0);
-		char *timestr = _time_stamp_to_str (bin->nt_headers->file_header.TimeDateStamp);
+		char *timestr = r_time_stamp_to_str (bin->nt_headers->file_header.TimeDateStamp);
 		sdb_set_owned (bin->kv, "image_file_header.TimeDateStamp_string", timestr, 0);
 	}
 	bin->optional_header = &bin->nt_headers->optional_header;
@@ -1112,6 +1089,7 @@ static int bin_pe_init_imports(struct PE_(r_bin_pe_obj_t)* bin) {
 	PE_(image_import_directory) * curr_import_dir = NULL;
 
 	PE_(image_delay_import_directory) * delay_import_dir = NULL;
+	PE_(image_delay_import_directory) * new_delay_import_dir = NULL;
 	PE_(image_delay_import_directory) * curr_delay_import_dir = NULL;
 
 	int dir_size = sizeof(PE_(image_import_directory));
@@ -1185,14 +1163,14 @@ static int bin_pe_init_imports(struct PE_(r_bin_pe_obj_t)* bin) {
 					bprintf ("Warning: Cannot find end of import symbols\n");
 					break;
 				}
-				delay_import_dir = (PE_(image_delay_import_directory)*)realloc (
+				new_delay_import_dir = (PE_(image_delay_import_directory)*)realloc (
 					delay_import_dir, (indx * delay_import_size) + 1);
-				if (delay_import_dir == 0) {
+				if (!new_delay_import_dir) {
 					r_sys_perror ("malloc (delay import directory)");
 					free (delay_import_dir);
 					return false;
 				}
-
+				delay_import_dir = new_delay_import_dir;
 				curr_delay_import_dir = delay_import_dir + (indx - 1);
 				rr = r_buf_read_at (bin->b, delay_import_dir_offset + (indx - 1) * delay_import_size,
 					(ut8*) (curr_delay_import_dir), dir_size);
@@ -1235,8 +1213,9 @@ static int bin_pe_init_exports(struct PE_(r_bin_pe_obj_t)* bin) {
 	return true;
 }
 
-static void _free_resources(r_pe_resource *rs) {
+static void _free_resource(r_pe_resource *rs) {
 	if (rs) {
+		free (rs->name);
 		free (rs->timestr);
 		free (rs->data);
 		free (rs->type);
@@ -1253,7 +1232,7 @@ static int bin_pe_init_resource(struct PE_(r_bin_pe_obj_t)* bin) {
 		return false;
 	}
 
-	bin->resources = r_list_newf ((RListFree)_free_resources);
+	bin->resources = r_list_newf ((RListFree)_free_resource);
 	if (!bin->resources) {
 		return false;
 	}
@@ -1270,8 +1249,6 @@ static int bin_pe_init_resource(struct PE_(r_bin_pe_obj_t)* bin) {
 	bin->resource_directory_offset = resource_dir_paddr;
 	return true;
 }
-
-
 
 static void bin_pe_store_tls_callbacks(struct PE_(r_bin_pe_obj_t)* bin, PE_DWord callbacks) {
 	PE_DWord paddr, haddr;
@@ -1593,6 +1570,7 @@ static String* Pe_r_bin_pe_parse_string(struct PE_(r_bin_pe_obj_t)* bin, PE_DWor
 
 	for (i = 0; *curAddr < begAddr + string->wLength; ++i, *curAddr += sizeof (ut16)) {
 		ut16 utf16_char;
+		ut16 *tmpKey;
 		if (*curAddr > bin->size || *curAddr + sizeof (ut16) > bin->size) {
 			goto out_error;
 		}
@@ -1600,7 +1578,12 @@ static String* Pe_r_bin_pe_parse_string(struct PE_(r_bin_pe_obj_t)* bin, PE_DWor
 			bprintf ("Warning: check (String szKey)\n");
 			goto out_error;
 		}
-		string->szKey = (ut16*) realloc (string->szKey, (i + 1) * sizeof (ut16));
+		tmpKey = (ut16*) realloc (string->szKey, (i + 1) * sizeof (ut16));
+		if (!tmpKey) {
+			bprintf ("Warning: realloc (String szKey)\n");
+			goto out_error;
+		}
+		string->szKey = tmpKey;
 		string->szKey[i] = utf16_char;
 		string->wKeyLen += sizeof (ut16);
 		if (!utf16_char) {
@@ -2258,7 +2241,8 @@ static char* _resource_type_str(int type) {
 	return strdup (typeName);
 }
 
-static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_resource_directory *dir, ut64 offDir, int type, int id, HtUU *dirs) {
+static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_resource_directory *dir, ut64 offDir, int type, int id, HtUU *dirs, char *resource_name) {
+	ut8 *resourceEntryName = NULL;
 	int index = 0;
 	ut32 totalRes = dir->NumberOfNamedEntries + dir->NumberOfIdEntries;
 	ut64 rsrc_base = bin->resource_directory_offset;
@@ -2280,6 +2264,24 @@ static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_
 			eprintf ("Warning: read resource entry\n");
 			break;
 		}
+		if (entry.u1.s.NameIsString) {
+			int i;
+			ut16 buf, resourceEntryNameLength;
+			r_buf_read_at (bin->b, bin->resource_directory_offset + entry.u1.s.NameOffset, (ut8*)&buf, sizeof (ut16));
+			resourceEntryNameLength = r_read_le16 (&buf);
+			resourceEntryName = calloc (resourceEntryNameLength + 1, sizeof (ut8));
+			if (resourceEntryName) {
+				for (i = 0; i < resourceEntryNameLength; i++) { /* Convert Unicode to ASCII */
+					ut8 byte;
+					int r = r_buf_read_at (bin->b, bin->resource_directory_offset + entry.u1.s.NameOffset + 2 + (i*2), &byte, sizeof (ut8));
+					if (r < 1 || !byte) {
+						R_FREE (resourceEntryName);
+						break;
+					}
+					resourceEntryName[i] = byte;
+				}
+			}
+		}
 		if (entry.u2.s.DataIsDirectory) {
 			//detect here malicious file trying to making us infinite loop
 			Pe_image_resource_directory identEntry;
@@ -2288,9 +2290,17 @@ static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_
 			if (len < 1 || len != sizeof (Pe_image_resource_directory)) {
 				eprintf ("Warning: parsing resource directory\n");
 			}
+			if (resource_name) {
+				/* We're about to recursively call this function with a new resource entry name
+				   and we haven't used resource_name, so free it. Only happens in weird PEs. */
+				R_FREE (resource_name);
+			}
 			_parse_resource_directory (bin, &identEntry,
-				entry.u2.s.OffsetToDirectory, type, entry.u1.Id, dirs);
+				entry.u2.s.OffsetToDirectory, type, entry.u1.Id, dirs, (char *)resourceEntryName);
+			// do not dblfree, ownership is transferred free (resourceEntryName);
 			continue;
+		} else {
+			R_FREE (resourceEntryName);
 		}
 
 		Pe_image_resource_data_entry *data = R_NEW0 (Pe_image_resource_data_entry);
@@ -2298,7 +2308,7 @@ static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_
 			break;
 		}
 		off = rsrc_base + entry.u2.OffsetToData;
-		if (off > bin->size || off + sizeof (data) > bin->size) {
+		if (off > bin->size || off + sizeof (*data) > bin->size) {
 			free (data);
 			break;
 		}
@@ -2353,11 +2363,21 @@ static void _parse_resource_directory(struct PE_(r_bin_pe_obj_t) *bin, Pe_image_
 			free (data);
 			break;
 		}
-		rs->timestr = _time_stamp_to_str (dir->TimeDateStamp);
+		/* Compare compileTimeStamp to resource timestamp to figure out if DOS date or POSIX date */
+		if (r_time_stamp_is_dos_format ((ut32) sdb_num_get (bin->kv, "image_file_header.TimeDateStamp", 0), dir->TimeDateStamp)) {
+			rs->timestr = r_time_stamp_to_str ( r_dos_time_stamp_to_posix (dir->TimeDateStamp));
+		} else {
+			rs->timestr = r_time_stamp_to_str (dir->TimeDateStamp);
+		}
 		rs->type = _resource_type_str (type);
 		rs->language = strdup (_resource_lang_str (entry.u1.Name & 0x3ff));
 		rs->data = data;
-		rs->name = id;
+		if (resource_name) {
+			rs->name = strdup (resource_name);
+		} else {
+			char numberbuf[SDB_NUM_BUFSZ];
+			rs->name = strdup (sdb_itoa (id, numberbuf, 10));
+		}
 		r_list_append (bin->resources, rs);
 	}
 }
@@ -2379,7 +2399,7 @@ static void _store_resource_sdb(struct PE_(r_bin_pe_obj_t) *bin) {
 		vaddr = bin_pe_rva_to_va (bin, rs->data->OffsetToData);
 		sdb_num_set (sdb, key, vaddr, 0);
 		key = sdb_fmt ("resource.%d.name", index);
-		sdb_num_set (sdb, key, rs->name, 0);
+		sdb_set (sdb, key, rs->name, 0);
 		key = sdb_fmt ("resource.%d.size", index);
 		sdb_num_set (sdb, key, rs->data->Size, 0);
 		key = sdb_fmt ("resource.%d.type", index);
@@ -2432,7 +2452,7 @@ R_API void PE_(bin_pe_parse_resource)(struct PE_(r_bin_pe_obj_t) *bin) {
 			if (len < 1 || len != sizeof (identEntry)) {
 				eprintf ("Warning: parsing resource directory\n");
 			}
-			_parse_resource_directory (bin, &identEntry, typeEntry.u2.s.OffsetToDirectory, typeEntry.u1.Id, 0, dirs);
+			_parse_resource_directory (bin, &identEntry, typeEntry.u2.s.OffsetToDirectory, typeEntry.u1.Id, 0, dirs, NULL);
 		}
 	}
 	ht_uu_free (dirs);
@@ -2660,9 +2680,9 @@ struct r_bin_pe_export_t* PE_(r_bin_pe_get_exports)(struct PE_(r_bin_pe_obj_t)* 
 			return NULL;
 		}
 		if (r_buf_read_at (bin->b, bin_pe_rva_to_paddr (bin, bin->export_directory->Name), (ut8*) dll_name, PE_NAME_LENGTH) < 1) {
+			// we dont stop if dll name cant be read, we set dllname to null and continue
 			bprintf ("Warning: read (dll name)\n");
-			free (exports);
-			return NULL;
+			dll_name[0] = '\0';
 		}
 		functions_paddr = bin_pe_rva_to_paddr (bin, bin->export_directory->AddressOfFunctions);
 		names_paddr = bin_pe_rva_to_paddr (bin, bin->export_directory->AddressOfNames);
@@ -2732,7 +2752,7 @@ struct r_bin_pe_export_t* PE_(r_bin_pe_get_exports)(struct PE_(r_bin_pe_obj_t)* 
 		}
 		exports[i].last = 1;
 	}
-	exp = parse_symbol_table (bin, exports, exports_sz - 1);
+	exp = parse_symbol_table (bin, exports, exports_sz - sizeof (struct r_bin_pe_export_t));
 	if (exp) {
 		exports = exp;
 	}
@@ -2911,7 +2931,6 @@ struct r_bin_pe_import_t* PE_(r_bin_pe_get_imports)(struct PE_(r_bin_pe_obj_t)* 
 			return NULL;
 		}
 		curr_import_dir = (PE_(image_import_directory)*)(bin->b->buf + bin->import_directory_offset);
-		dll_name_offset = curr_import_dir->Name;
 
 		if (bin->import_directory_size < 1) {
 			return NULL;
@@ -2993,6 +3012,7 @@ beach:
 		imps = realloc (imports, (nimp + 1) * sizeof(struct r_bin_pe_import_t));
 		if (!imps) {
 			r_sys_perror ("realloc (import)");
+			free (imports);
 			return NULL;
 		}
 		imports = imps;
@@ -3347,7 +3367,6 @@ static struct r_bin_pe_section_t* PE_(r_bin_pe_get_sections)(struct PE_(r_bin_pe
 		return NULL;
 	}
 	for (i = 0, j = 0; i < bin->num_sections; i++) {
-		//if sz = 0 r_io_section_add will not add it so just skeep
 		if (!shdr[i].SizeOfRawData && !shdr[i].Misc.VirtualSize) {
 			continue;
 		}
