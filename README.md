@@ -1,3 +1,5 @@
+## NOTE: this has been moved into radare2, this repo is archived
+
 It's like a regular mach0 but with all the KEXTs prelinked in.
 
 Usage:
